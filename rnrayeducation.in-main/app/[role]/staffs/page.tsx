@@ -1,0 +1,166 @@
+"use client";
+
+import { Building2, CheckCircle, Clock, Users } from "lucide-react";
+import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
+import { useSearchParams } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { User } from "@/lib/types/user.type";
+import { StaffsTable } from "./_components/staffs-table";
+
+export default function StaffsPage() {
+  const searchParams = useSearchParams();
+  const staffType = searchParams.get("type");
+
+  const { data: rawData, loading, error } = useFirebaseRealtime<User>("users", {
+    asArray: true,
+    filter: (user) => user.role === "staff",
+  });
+
+  const allStaffs = (rawData as User[]) || [];
+  const staffs = staffType
+    ? allStaffs.filter((u) => u.staffType === staffType)
+    : allStaffs;
+
+  // Calculate stats
+  const stats = {
+    total: allStaffs.length,
+    teaching: allStaffs.filter((u) => u.staffType === "teaching").length,
+    nonTeaching: allStaffs.filter((u) => u.staffType === "non-teaching").length,
+    active: allStaffs.filter((u) => u.status === "active").length,
+  };
+
+  if (loading) {
+    const skeletonCardKeys = [
+      "stats-total",
+      "stats-active",
+      "stats-pending",
+      "stats-inactive",
+    ];
+    const skeletonRowKeys = ["row-1", "row-2", "row-3", "row-4", "row-5"];
+
+    return (
+      <div className="container mx-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-full sm:w-96" />
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          {skeletonCardKeys.map((key) => (
+            <Card key={key}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-20" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-16" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-32" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {skeletonRowKeys.map((key) => (
+                <Skeleton key={key} className="h-16 w-full" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto p-4 sm:p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-red-600">Error</CardTitle>
+            <CardDescription>
+              {error instanceof Error
+                ? error.message
+                : "Failed to load staffs. Please try again."}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-7xl">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">
+              Total Staffs
+            </CardTitle>
+            <Building2 className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-bold">{stats.total}</div>
+            <p className="text-xs text-muted-foreground">All staff accounts</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">
+              Active
+            </CardTitle>
+            <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-bold text-green-600">
+              {stats.active}
+            </div>
+            <p className="text-xs text-muted-foreground">Currently active</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">
+              Teaching
+            </CardTitle>
+            <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-bold text-blue-600">
+              {stats.teaching}
+            </div>
+            <p className="text-xs text-muted-foreground">Teaching staff</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">
+              Non-Teaching
+            </CardTitle>
+            <Users className="h-3 w-3 sm:h-4 sm:w-4 text-gray-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-bold text-gray-600">
+              {stats.nonTeaching}
+            </div>
+            <p className="text-xs text-muted-foreground">Support staff</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Staffs Table */}
+      <StaffsTable staffs={staffs} onRefresh={() => { }} />
+    </div>
+  );
+}
