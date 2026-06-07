@@ -526,8 +526,12 @@ class StudentService {
       mutate({ action: "get", path: "classes" }),
     ]);
 
-    const enrollments = getArrFromObj(enrollmentsRaw || {}) as Enrollment[];
-    const classes = getArrFromObj(classesRaw || {}) as Class[];
+    const enrollments = getArrFromObj<Enrollment & Record<string, unknown>>(
+      (enrollmentsRaw || {}) as Record<string, Enrollment & Record<string, unknown>>,
+    );
+    const classes = getArrFromObj<Class & Record<string, unknown>>(
+      (classesRaw || {}) as Record<string, Class & Record<string, unknown>>,
+    );
     const classNameById = new Map(classes.map((cls) => [cls.id, cls.name]));
 
     const grouped = new Map<string, Array<Student & { groupClass: string; groupSection: string }>>();

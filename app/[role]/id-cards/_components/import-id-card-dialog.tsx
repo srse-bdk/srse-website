@@ -123,7 +123,7 @@ export function ImportIdCardDialog({
               return {
                 ...row,
                 _matchLabel: match?.fullName || "Not found",
-                _status: match ? "ready" : "not_found",
+                _status: match ? ("ready" as const) : ("not_found" as const),
                 _matchedStudent: match,
               };
             })
@@ -152,7 +152,7 @@ export function ImportIdCardDialog({
             return {
               ...row,
               _matchLabel: match?.name || "Not found",
-              _status: match ? "ready" : "not_found",
+              _status: match ? ("ready" as const) : ("not_found" as const),
             };
           });
           setParsedRows(preview);
