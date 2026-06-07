@@ -8,6 +8,13 @@ import type {
 } from "@/lib/types/student.type";
 import type { User } from "@/lib/types/user.type";
 import { getStudentLoginEmailFromPen, normalizePen } from "@/lib/utils/student-login";
+import {
+  getClassSectionGroupKey,
+  getNextRollNumberForClassSection,
+} from "@/lib/utils/student-roll-number";
+import type { Enrollment } from "@/lib/types/enrollment.type";
+import type { Class } from "@/lib/types/class.type";
+import { ensureUniqueScanId, generateUniqueScanId } from "@/lib/utils/scan-id";
 import { getArrFromObj } from "@ashirbad/js-core";
 import { createUser, mutate } from "@atechhub/firebase";
 
@@ -18,6 +25,9 @@ class StudentService {
   async create(data: StudentInput): Promise<string> {
     const nowISO = new Date().toISOString();
     const pen = data.pen ? normalizePen(data.pen) : "";
+    const scanId = data.scanId
+      ? await ensureUniqueScanId(data.scanId)
+      : await generateUniqueScanId("STU");
     let studentAuthUid: string | null = null;
     let studentAuthEmail: string | null = null;
 
@@ -42,6 +52,20 @@ class StudentService {
     // Compute full name
     const fullName = `${data.firstName} ${data.lastName}`.trim();
 
+    let rollNumber = data.rollNumber?.trim();
+    if (
+      !rollNumber &&
+      data.currentClass?.trim() &&
+      data.currentSection?.trim()
+    ) {
+      const students = await this.getAll();
+      rollNumber = getNextRollNumberForClassSection(
+        students,
+        data.currentClass.trim(),
+        data.currentSection.trim(),
+      );
+    }
+
     if (pen) {
       studentAuthEmail = getStudentLoginEmailFromPen(pen);
 
@@ -64,6 +88,7 @@ class StudentService {
     }
 
     const studentData = {
+      scanId,
       admissionNumber: data.admissionNumber,
       admissionDate: data.admissionDate || nowISO, // Use current date if not provided
       firstName: data.firstName,
@@ -83,7 +108,7 @@ class StudentService {
       status: data.status || "active",
       currentClass: data.currentClass,
       currentSection: data.currentSection,
-      rollNumber: data.rollNumber,
+      rollNumber: rollNumber || data.rollNumber,
       siblingIds: data.siblingIds || [],
       pen: pen || undefined,
       socialCategory: data.socialCategory,
@@ -108,6 +133,7 @@ class StudentService {
     if (pen && studentAuthUid && studentAuthEmail) {
       const userPayload = {
         uid: studentAuthUid,
+        scanId,
         name: fullName,
         email: studentAuthEmail,
         password: pen,
@@ -482,6 +508,151 @@ class StudentService {
       },
       actionBy: "admin",
     });
+  }
+
+  /**
+   * Assign roll numbers alphabetically within each class-section group.
+   * Intended once per academic year. Overwrites existing roll numbers.
+   */
+  async assignRollNumbersAlphabetically(): Promise<{
+    updatedCount: number;
+    skippedCount: number;
+    groupCount: number;
+  }> {
+    const nowISO = new Date().toISOString();
+    const [students, enrollmentsRaw, classesRaw] = await Promise.all([
+      this.getAll(),
+      mutate({ action: "get", path: "enrollments" }),
+      mutate({ action: "get", path: "classes" }),
+    ]);
+
+    const enrollments = getArrFromObj(enrollmentsRaw || {}) as Enrollment[];
+    const classes = getArrFromObj(classesRaw || {}) as Class[];
+    const classNameById = new Map(classes.map((cls) => [cls.id, cls.name]));
+
+    const grouped = new Map<string, Array<Student & { groupClass: string; groupSection: string }>>();
+    let skippedCount = 0;
+
+    for (const student of students) {
+      if (student.status !== "active") continue;
+
+      let groupClass = student.currentClass?.trim() || "";
+      let groupSection = student.currentSection?.trim() || "";
+
+      if (!groupClass || !groupSection) {
+        const activeEnrollment = enrollments
+          .filter(
+            (enrollment) =>
+              enrollment.studentId === student.id &&
+              enrollment.status === "active",
+          )
+          .sort((left, right) =>
+            right.enrollmentDate.localeCompare(left.enrollmentDate),
+          )[0];
+
+        if (activeEnrollment) {
+          groupClass =
+            classNameById.get(activeEnrollment.classId) || groupClass;
+          groupSection = activeEnrollment.section || groupSection;
+        }
+      }
+
+      if (!groupClass || !groupSection) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const key = getClassSectionGroupKey(groupClass, groupSection);
+      const list = grouped.get(key) || [];
+      list.push({
+        ...student,
+        groupClass,
+        groupSection,
+      });
+      grouped.set(key, list);
+    }
+
+    let updatedCount = 0;
+    const tempPrefix = "ROLL-TEMP-";
+
+    for (const groupStudents of grouped.values()) {
+      const sortedStudents = [...groupStudents].sort((left, right) =>
+        (left.fullName || "").localeCompare(right.fullName || "", undefined, {
+          sensitivity: "base",
+        }),
+      );
+
+      for (const student of sortedStudents) {
+        await mutate({
+          action: "update",
+          path: `students/${student.id}`,
+          data: {
+            rollNumber: `${tempPrefix}${student.id}`,
+            updatedAt: nowISO,
+          },
+          actionBy: "admin",
+        });
+
+        for (const enrollment of enrollments) {
+          if (
+            enrollment.studentId === student.id &&
+            enrollment.status === "active"
+          ) {
+            await mutate({
+              action: "update",
+              path: `enrollments/${enrollment.id}`,
+              data: {
+                rollNumber: `${tempPrefix}${student.id}`,
+                updatedAt: nowISO,
+              },
+              actionBy: "admin",
+            });
+          }
+        }
+      }
+
+      for (let index = 0; index < sortedStudents.length; index += 1) {
+        const student = sortedStudents[index];
+        const rollNumber = String(index + 1);
+
+        await mutate({
+          action: "update",
+          path: `students/${student.id}`,
+          data: {
+            currentClass: student.groupClass,
+            currentSection: student.groupSection,
+            rollNumber,
+            updatedAt: nowISO,
+          },
+          actionBy: "admin",
+        });
+
+        for (const enrollment of enrollments) {
+          if (
+            enrollment.studentId === student.id &&
+            enrollment.status === "active"
+          ) {
+            await mutate({
+              action: "update",
+              path: `enrollments/${enrollment.id}`,
+              data: {
+                rollNumber,
+                updatedAt: nowISO,
+              },
+              actionBy: "admin",
+            });
+          }
+        }
+
+        updatedCount += 1;
+      }
+    }
+
+    return {
+      updatedCount,
+      skippedCount,
+      groupCount: grouped.size,
+    };
   }
 
   /**

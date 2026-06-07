@@ -43,6 +43,7 @@ export interface StudentDocument {
 
 export interface Student extends BaseEntity {
   // Basic Information
+  scanId?: string;
   admissionNumber: string; // Manual entry
   admissionDate: string; // ISO date string - Date when student was admitted
   firstName: string;
@@ -89,6 +90,7 @@ export interface Student extends BaseEntity {
 
 // Input types for student creation
 export interface StudentInput {
+  scanId?: string;
   admissionNumber: string;
   admissionDate?: string; // Date when student was admitted
   firstName: string;
@@ -119,6 +121,7 @@ export interface StudentInput {
 }
 
 export interface StudentUpdateInput {
+  scanId?: string;
   admissionNumber?: string;
   admissionDate?: string;
   firstName?: string;

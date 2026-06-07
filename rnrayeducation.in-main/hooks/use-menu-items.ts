@@ -1,4 +1,3 @@
-import type { UserRole } from "@/lib/types/user.type";
 import {
   Award,
   Baby,
@@ -10,11 +9,13 @@ import {
   Calendar,
   CalendarClock,
   Clock,
+  CreditCard,
   FileCheck,
   FileText,
   GraduationCap,
   Home,
   List,
+  ScanLine,
   Settings,
   TrendingUp,
   UserCheck,
@@ -23,6 +24,7 @@ import {
   Video,
   Wallet,
 } from "lucide-react";
+import type { UserRole } from "@/lib/types/user.type";
 
 export type NavigationSubItem = {
   title: string;
@@ -107,6 +109,18 @@ export function useMenuItems() {
       url: "/time-table",
       icon: CalendarClock,
       roles: ["admin", "staff"],
+    },
+    {
+      title: "Gate Scanner",
+      url: "/scanner",
+      icon: ScanLine,
+      roles: ["admin", "staff"],
+    },
+    {
+      title: "ID Card Data",
+      url: "/id-cards",
+      icon: CreditCard,
+      roles: ["admin"],
     },
     {
       title: "Certificates",

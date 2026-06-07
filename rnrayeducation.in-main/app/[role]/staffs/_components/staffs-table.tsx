@@ -76,6 +76,7 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
   const filteredStaffs = staffs.filter(
     (staff) =>
       staff.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      staff.scanId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       staff.email?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
@@ -140,9 +141,10 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
         : filteredStaffs;
 
     const csvContent = [
-      ["Name", "Email", "Status", "Type", "Created At", "ID"],
+      ["Name", "Scan ID", "Email", "Status", "Type", "Created At", "ID"],
       ...staffsToExport.map((staff) => [
         `"${staff.name}"`,
+        `"${staff.scanId || ""}"`,
         `"${staff.email}"`,
         `"${staff.status}"`,
         `"${staff.staffType || "N/A"}"`,
@@ -295,7 +297,7 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
             <div className="relative w-full sm:max-w-xs">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search staffs..."
+                placeholder="Search staffs by name, scan ID, email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 text-sm sm:text-base"
@@ -378,6 +380,7 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
                         />
                       </TableHead>
                       <TableHead>Staff</TableHead>
+                      <TableHead>Scan ID</TableHead>
                       <TableHead>Contact</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Type</TableHead>
@@ -402,9 +405,11 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
                           <TableCell>
                             <div className="space-y-1">
                               <div className="font-medium">{staff.name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                ID: {staff.id}
-                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-mono text-xs">
+                              {staff.scanId || "-"}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -543,6 +548,9 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
                             <div>
                               <div className="font-medium text-sm truncate">
                                 {staff.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                Scan ID: {staff.scanId || "-"}
                               </div>
                               <div className="text-xs text-muted-foreground truncate">
                                 ID: {staff.id}

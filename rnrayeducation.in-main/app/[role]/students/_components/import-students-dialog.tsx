@@ -30,14 +30,17 @@ import {
   Download,
 } from "lucide-react";
 import { normalizePen } from "@/lib/utils/student-login";
+import { getNextRollNumberForClassSection } from "@/lib/utils/student-roll-number";
 import {
   parseStudentsFile,
   validateStudentData,
   generateCSVTemplate,
   downloadCSV,
 } from "@/lib/utils/students-import-export";
-import { studentService } from "@/lib/services";
-import type { StudentInput, StudentUpdateInput } from "@/lib/types/student.type";
+import { classService, enrollmentService, studentService } from "@/lib/services";
+import type { Class } from "@/lib/types/class.type";
+import type { Enrollment } from "@/lib/types/enrollment.type";
+import type { StudentInput, StudentUpdateInput, Student } from "@/lib/types/student.type";
 import { toast } from "sonner";
 
 interface ImportStudentsDialogProps {
@@ -56,9 +59,61 @@ interface IndexedStudent {
   id: string;
 }
 
+function normalizeClassName(value?: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^class\s+/i, "")
+    .replace(/\s+/g, " ");
+}
+
+function normalizeSection(value?: string): string {
+  return String(value || "").trim().toUpperCase();
+}
+
+function getCurrentAcademicYear(): string {
+  const currentYear = new Date().getFullYear();
+  return `${currentYear}-${String(currentYear + 1).slice(-2)}`;
+}
+
+function resolveClassFromStudent(classes: Class[], student: Partial<StudentInput>) {
+  const targetClass = normalizeClassName(student.currentClass);
+  const targetSection = normalizeSection(student.currentSection);
+
+  if (!targetClass || !targetSection) {
+    return null;
+  }
+
+  const matchedClass = classes.find((classItem) => {
+    const className = normalizeClassName(classItem.name);
+    return className === targetClass;
+  });
+
+  if (!matchedClass) {
+    return null;
+  }
+
+  const matchedSection = (matchedClass.sections || []).find(
+    (section) => normalizeSection(section) === targetSection,
+  );
+
+  if (!matchedSection) {
+    return null;
+  }
+
+  return {
+    classId: matchedClass.id,
+    section: matchedSection,
+    academicYear: matchedClass.academicYear || getCurrentAcademicYear(),
+  };
+}
+
 function toStudentUpdateInput(student: ParsedStudent): StudentUpdateInput {
   const updateData: StudentUpdateInput = {};
 
+  if (student.scanId !== undefined) {
+    updateData.scanId = student.scanId;
+  }
   if (student.admissionNumber !== undefined) {
     updateData.admissionNumber = student.admissionNumber;
   }
@@ -213,10 +268,18 @@ export function ImportStudentsDialog({
       let updatedCount = 0;
       let skippedCount = 0;
       let errorCount = 0;
+      let enrollmentsCreatedCount = 0;
+      let enrollmentBackfillCount = 0;
+      let enrollmentErrorCount = 0;
 
       const existingStudents = await studentService.getAll();
+      const [classes, enrollments] = await Promise.all([
+        classService.getAll(),
+        enrollmentService.getAll(),
+      ]);
       const studentsByAdmission = new Map<string, IndexedStudent>();
       const studentsByPen = new Map<string, IndexedStudent>();
+      const enrollmentsByStudentId = new Map<string, Enrollment[]>();
 
       for (const existingStudent of existingStudents) {
         const admissionKey = (existingStudent.admissionNumber || "")
@@ -226,6 +289,73 @@ export function ImportStudentsDialog({
 
         if (admissionKey) studentsByAdmission.set(admissionKey, { id: existingStudent.id });
         if (penKey) studentsByPen.set(penKey, { id: existingStudent.id });
+      }
+
+      for (const enrollment of enrollments) {
+        const list = enrollmentsByStudentId.get(enrollment.studentId) || [];
+        list.push(enrollment);
+        enrollmentsByStudentId.set(enrollment.studentId, list);
+      }
+
+      const ensureEnrollmentForStudent = async (
+        studentId: string,
+        student: Partial<StudentInput>,
+      ) => {
+        try {
+          const resolved = resolveClassFromStudent(classes, student);
+          if (!resolved) return false;
+
+          const studentEnrollments = enrollmentsByStudentId.get(studentId) || [];
+          const alreadyActive = studentEnrollments.some(
+            (enrollment) =>
+              enrollment.status === "active" &&
+              enrollment.academicYear === resolved.academicYear,
+          );
+          if (alreadyActive) return false;
+
+          const rollNumber =
+            String(student.rollNumber || "").trim() ||
+            getNextRollNumberForClassSection(
+              existingStudents,
+              student.currentClass || "",
+              student.currentSection || "",
+            );
+
+          const enrollmentId = await enrollmentService.enroll({
+            studentId,
+            classId: resolved.classId,
+            section: resolved.section,
+            rollNumber,
+            academicYear: resolved.academicYear,
+            notes: "Auto-enrolled during student import/backfill",
+          });
+
+          const newEnrollment: Enrollment = {
+            id: enrollmentId,
+            studentId,
+            classId: resolved.classId,
+            section: resolved.section,
+            rollNumber,
+            academicYear: resolved.academicYear,
+            enrollmentDate: new Date().toISOString(),
+            status: "active",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          enrollmentsByStudentId.set(studentId, [...studentEnrollments, newEnrollment]);
+          return true;
+        } catch (enrollmentError) {
+          console.error(`Enrollment create failed for student ${studentId}:`, enrollmentError);
+          enrollmentErrorCount++;
+          return false;
+        }
+      };
+
+      // Backfill missing active enrollments for all existing active students first.
+      for (const existingStudent of existingStudents) {
+        if (existingStudent.status !== "active") continue;
+        const created = await ensureEnrollmentForStudent(existingStudent.id, existingStudent);
+        if (created) enrollmentBackfillCount++;
       }
 
       for (const student of validStudents) {
@@ -246,11 +376,35 @@ export function ImportStudentsDialog({
             const updateData = toStudentUpdateInput(student);
             await studentService.update(existingStudent.id, updateData);
             updatedCount++;
+            const enrolled = await ensureEnrollmentForStudent(existingStudent.id, student);
+            if (enrolled) enrollmentsCreatedCount++;
             continue;
+          }
+
+          if (
+            !student.rollNumber?.trim() &&
+            student.currentClass?.trim() &&
+            student.currentSection?.trim()
+          ) {
+            student.rollNumber = getNextRollNumberForClassSection(
+              existingStudents,
+              student.currentClass,
+              student.currentSection,
+            );
           }
 
           const studentId = await studentService.create(student as StudentInput);
           createdCount++;
+          existingStudents.push({
+            id: studentId,
+            status: student.status || "active",
+            currentClass: student.currentClass,
+            currentSection: student.currentSection,
+            rollNumber: student.rollNumber,
+            fullName: `${student.firstName || ""} ${student.lastName || ""}`.trim(),
+          } as Student);
+          const enrolled = await ensureEnrollmentForStudent(studentId, student);
+          if (enrolled) enrollmentsCreatedCount++;
 
           // Keep in-memory index in sync for duplicates within same import file
           const indexedStudent: IndexedStudent = { id: studentId };
@@ -265,21 +419,36 @@ export function ImportStudentsDialog({
         }
       }
 
-      if (createdCount > 0 || updatedCount > 0) {
+      const invalidCount = parsedStudents.filter((student) => !student._valid).length;
+
+      if (createdCount > 0 || updatedCount > 0 || enrollmentBackfillCount > 0) {
         const parts = [
           `${createdCount} created`,
           ...(updateExisting ? [`${updatedCount} updated`] : []),
-          ...(skippedCount > 0 ? [`${skippedCount} skipped`] : []),
+          ...(skippedCount > 0 ? [`${skippedCount} skipped (already exist)`] : []),
+          ...(invalidCount > 0 ? [`${invalidCount} invalid rows ignored`] : []),
+          ...(enrollmentsCreatedCount > 0
+            ? [`${enrollmentsCreatedCount} enrolled from import`]
+            : []),
+          ...(enrollmentBackfillCount > 0
+            ? [`${enrollmentBackfillCount} enrollments backfilled`]
+            : []),
+          ...(enrollmentErrorCount > 0
+            ? [`${enrollmentErrorCount} enrollment failures`]
+            : []),
           ...(errorCount > 0 ? [`${errorCount} failed`] : []),
         ];
         toast.success(`Import completed: ${parts.join(", ")}.`);
         onSuccess();
         handleClose();
       } else {
+        const invalidCount = parsedStudents.filter((student) => !student._valid).length;
         toast.error(
-          skippedCount > 0
-            ? `No new students imported. ${skippedCount} existing student(s) skipped.`
-            : "Failed to import students. Please check the errors.",
+          invalidCount > 0
+            ? `No students imported. ${invalidCount} row(s) invalid — check validation errors below.`
+            : skippedCount > 0
+              ? `No new students imported. ${skippedCount} existing student(s) skipped. Enable "Update existing students" to update them.`
+              : "Failed to import students. Please check the errors.",
         );
       }
     } catch (error) {
@@ -314,7 +483,8 @@ export function ImportStudentsDialog({
           </DialogTitle>
           <DialogDescription>
             Upload a CSV or Excel file to import multiple students at once.
-            Download the template to see the required format.
+            Student PEN is optional. SDMS values like NA are ignored. If admission
+            number is missing, one is generated automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -370,8 +540,8 @@ export function ImportStudentsDialog({
                     Found {parseErrors.length} error(s):
                   </p>
                   <ul className="list-disc list-inside text-sm space-y-1">
-                    {parseErrors.slice(0, 5).map((error, index) => (
-                      <li key={index}>{error}</li>
+                    {parseErrors.slice(0, 5).map((error) => (
+                      <li key={error}>{error}</li>
                     ))}
                     {parseErrors.length > 5 && (
                       <li>... and {parseErrors.length - 5} more</li>
@@ -431,6 +601,7 @@ export function ImportStudentsDialog({
                   <TableHeader className="sticky top-0 bg-background">
                     <TableRow>
                       <TableHead className="w-[50px]">Row</TableHead>
+                      <TableHead>Scan ID</TableHead>
                       <TableHead>Full Name</TableHead>
                       <TableHead>Admission No</TableHead>
                       <TableHead>Email</TableHead>
@@ -439,10 +610,13 @@ export function ImportStudentsDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {parsedStudents.map((student, index) => (
-                      <TableRow key={index}>
+                    {parsedStudents.map((student) => (
+                      <TableRow key={student._rowNumber}>
                         <TableCell className="font-mono text-xs">
                           {student._rowNumber}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {student.scanId || "-"}
                         </TableCell>
                         <TableCell>
                           {student.firstName} {student.lastName}
@@ -499,8 +673,8 @@ export function ImportStudentsDialog({
               <div className="space-y-1 max-h-[200px] overflow-y-auto">
                 {parsedStudents
                   .filter((s) => !s._valid)
-                  .map((student, index) => (
-                    <Alert key={index} variant="destructive" className="py-2">
+                  .map((student) => (
+                    <Alert key={student._rowNumber} variant="destructive" className="py-2">
                       <AlertDescription className="text-xs">
                         <span className="font-semibold">
                           Row {student._rowNumber}:

@@ -1,4 +1,5 @@
 import type { BaseEntity } from "./common.type";
+import type { BloodGroup } from "./student.type";
 
 // Status types
 export type Status = "active" | "inactive";
@@ -14,6 +15,7 @@ export interface StaffSubjectAssignment {
 
 export interface User extends BaseEntity {
   uid: string;
+  scanId?: string;
   name: string;
   email: string;
   status: UserStatus;
@@ -22,6 +24,7 @@ export interface User extends BaseEntity {
   profilePicture?: string;
   profilePictureFileKey?: string;
   gender?: "male" | "female" | "other";
+  bloodGroup?: BloodGroup;
   position?: string;
   staffType?: "teaching" | "non-teaching";
   phoneNumber?: string;
@@ -39,11 +42,13 @@ export interface User extends BaseEntity {
 
 // Input types for user creation
 export interface UserInput {
+  scanId?: string;
   name: string;
   email: string;
   password: string;
   role: UserRole;
   gender: "male" | "female" | "other";
+  bloodGroup?: BloodGroup;
   position: string;
   staffType: "teaching" | "non-teaching";
   phoneNumber?: string;
@@ -51,12 +56,14 @@ export interface UserInput {
 }
 
 export interface UserUpdateInput {
+  scanId?: string;
   name?: string;
   email?: string;
   status?: UserStatus;
   profilePicture?: string;
   profilePictureFileKey?: string;
   gender?: "male" | "female" | "other";
+  bloodGroup?: BloodGroup;
   position?: string;
   staffType?: "teaching" | "non-teaching";
   phoneNumber?: string;

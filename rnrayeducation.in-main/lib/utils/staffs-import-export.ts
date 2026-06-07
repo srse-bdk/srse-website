@@ -1,4 +1,5 @@
-import type { UserInput, UserStatus } from "@/lib/types/user.type";
+import type { UserInput } from "@/lib/types/user.type";
+import type { BloodGroup } from "@/lib/types/student.type";
 
 /**
  * CSV Headers for staff import
@@ -20,10 +21,12 @@ export const CSV_HEADERS = [
 // UserInput: name, email, password, role, gender, position.
 
 export const STAFF_CSV_HEADERS = [
+    "Scan ID",
     "Name",
     "Email",
     "Password",
     "Gender",
+    "Blood Group",
     "Position"
 ] as const;
 
@@ -84,9 +87,11 @@ export function parseCSVToStaffs(csvText: string): {
         }
 
         const name = getValue("name");
+        const scanId = getValue("scan id");
         const email = getValue("email");
         const password = getValue("password");
         const genderStr = getValue("gender");
+        const bloodGroupRaw = getValue("blood group");
         const position = getValue("position");
 
         const rowErrors: string[] = [];
@@ -104,16 +109,38 @@ export function parseCSVToStaffs(csvText: string): {
             }
         }
 
+        let bloodGroup: BloodGroup | undefined;
+        if (bloodGroupRaw) {
+            const normalized = bloodGroupRaw.toUpperCase().replace(/\s+/g, "");
+            const validGroups: BloodGroup[] = [
+                "A+",
+                "A-",
+                "B+",
+                "B-",
+                "AB+",
+                "AB-",
+                "O+",
+                "O-",
+            ];
+            if (validGroups.includes(normalized as BloodGroup)) {
+                bloodGroup = normalized as BloodGroup;
+            } else {
+                rowErrors.push("Blood Group must be A+, A-, B+, B-, AB+, AB-, O+, or O-");
+            }
+        }
+
         if (rowErrors.length > 0) {
             errors.push(`Row ${i + 1}: ${rowErrors.join(", ")}`);
             continue;
         }
 
         staffs.push({
+            scanId: scanId || undefined,
             name,
             email,
             password,
-            gender, // role is fixed to 'staff' in service call, or we can add here if we want to follow type exactly.
+            gender,
+            bloodGroup,
             role: "staff",
             position: position || "Staff"
         });
@@ -139,7 +166,7 @@ export function validateStaffData(data: Partial<UserInput>): {
 
 export function generateStaffCSVTemplate(): string {
     const headers = STAFF_CSV_HEADERS.join(",");
-    const example = "John Doe,john.staff@school.com,securePassword123,male,Teacher";
+    const example = "STF-4D8M1R2K,John Doe,john.staff@school.com,securePassword123,male,B+,Teacher";
     return [headers, example].join("\n");
 }
 

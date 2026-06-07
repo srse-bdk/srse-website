@@ -29,11 +29,15 @@ import {
 } from "@/components/ui/table";
 import type { Student } from "@/lib/types/student.type";
 import {
-  Calendar,
+  formatClassSectionDisplay,
+  formatGenderLabel,
+  getStudentPrimaryContact,
+} from "@/lib/utils/student-display";
+import { sortStudentsByClassSectionRoll } from "@/lib/utils/student-roll-number";
+import {
   CheckCircle,
   Edit,
   GraduationCap,
-  Mail,
   MoreHorizontal,
   Phone,
   Plus,
@@ -44,8 +48,9 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AssignRollNumbersButton } from "./assign-roll-numbers-dialog";
 import { BulkDeleteStudentsDialog } from "./bulk-delete-students-dialog";
 import { DeleteStudentDialog } from "./delete-student-dialog";
 import { ExportStudentsButton } from "./export-students-button";
@@ -53,6 +58,33 @@ import { ImportStudentsDialog } from "./import-students-dialog";
 
 interface StudentsTableProps {
   students: Student[];
+}
+
+function formatDoB(dateOfBirth?: string): string {
+  if (!dateOfBirth) return "-";
+  const date = new Date(dateOfBirth);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString();
+}
+
+function renderContactNumCell(student: Student) {
+  const contact = getStudentPrimaryContact(student);
+
+  if (!contact.name && !contact.phone) {
+    return <span className="text-sm text-muted-foreground">-</span>;
+  }
+
+  return (
+    <div className="space-y-0.5 text-sm">
+      {contact.name ? <div className="font-medium">{contact.name}</div> : null}
+      {contact.phone ? (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Phone className="h-3 w-3 shrink-0" />
+          {contact.phone}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function StudentsTable({ students }: StudentsTableProps) {
@@ -67,16 +99,31 @@ export function StudentsTable({ students }: StudentsTableProps) {
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
 
   // Filter students based on search term
-  const filteredStudents = students.filter(
-    (student) =>
-      student.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.admissionNumber
-        ?.toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      student.rollNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.phone?.includes(searchTerm),
-  );
+  const filteredStudents = useMemo(() => {
+    const filtered = students.filter(
+      (student) =>
+        student.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.scanId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.admissionNumber
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        student.rollNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.phone?.includes(searchTerm),
+    );
+
+    return sortStudentsByClassSectionRoll(filtered);
+  }, [students, searchTerm]);
+
+  const activeStudentsMissingRoll = useMemo(() => {
+    return students.filter(
+      (student) =>
+        student.status === "active" &&
+        student.currentClass?.trim() &&
+        student.currentSection?.trim() &&
+        !String(student.rollNumber || "").trim(),
+    ).length;
+  }, [students]);
 
   const openDeleteDialog = (student: Student) => {
     setSelectedStudent(student);
@@ -145,7 +192,7 @@ export function StudentsTable({ students }: StudentsTableProps) {
         <div className="relative w-full">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
           <Input
-            placeholder="Search students by name, roll number, admission number, email, or phone..."
+            placeholder="Search by name, scan ID, roll, admission, email, or phone..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 pr-4 h-11 text-sm sm:text-base border-border/50 bg-background/50 focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/50 transition-all duration-200"
@@ -230,6 +277,9 @@ export function StudentsTable({ students }: StudentsTableProps) {
                 </CardTitle>
                 <CardDescription className="text-[10px] sm:text-xs mt-0.5 leading-tight">
                   {filteredStudents.length} of {students.length} students
+                  {activeStudentsMissingRoll > 0
+                    ? ` · ${activeStudentsMissingRoll} need roll numbers`
+                    : ""}
                 </CardDescription>
               </div>
             </div>
@@ -252,6 +302,7 @@ export function StudentsTable({ students }: StudentsTableProps) {
                 <Upload className="h-4 w-4" />
                 <span className="hidden sm:inline">Import</span>
               </Button>
+              <AssignRollNumbersButton disabled={students.length === 0} />
               <ExportStudentsButton students={filteredStudents} />
             </div>
           </div>
@@ -294,13 +345,13 @@ export function StudentsTable({ students }: StudentsTableProps) {
                           onCheckedChange={handleSelectAll}
                         />
                       </TableHead>
+                      <TableHead>Class-Sec</TableHead>
+                      <TableHead className="text-right">Roll No.</TableHead>
                       <TableHead>Student</TableHead>
-                      <TableHead>Roll No</TableHead>
                       <TableHead>PEN</TableHead>
+                      <TableHead>DoB</TableHead>
                       <TableHead>Parent</TableHead>
-                      <TableHead>Class</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Created</TableHead>
                       <TableHead className="w-[70px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -316,29 +367,22 @@ export function StudentsTable({ students }: StudentsTableProps) {
                           />
                         </TableCell>
                         <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium">
-                              {student.fullName}
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              {[
-                                student.gender,
-                                student.dateOfBirth &&
-                                !isNaN(new Date(student.dateOfBirth).getTime())
-                                  ? new Date(
-                                      student.dateOfBirth,
-                                    ).toLocaleDateString()
-                                  : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" • ")}
-                            </div>
+                          <div className="text-sm font-medium whitespace-nowrap">
+                            {formatClassSectionDisplay(student)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="font-mono text-sm tabular-nums">
+                            {student.rollNumber || "-"}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="font-mono text-sm">
-                            {student.rollNumber || "-"}
-                          </div>
+                          <div className="font-medium">{student.fullName}</div>
+                          {formatGenderLabel(student.gender) ? (
+                            <div className="text-sm text-muted-foreground">
+                              {formatGenderLabel(student.gender)}
+                            </div>
+                          ) : null}
                         </TableCell>
                         <TableCell>
                           <div className="font-mono text-sm">
@@ -346,60 +390,12 @@ export function StudentsTable({ students }: StudentsTableProps) {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="space-y-1">
-                            {(() => {
-                              const primaryGuardian = student.guardians?.find(
-                                (g) => g.isPrimary,
-                              );
-                              return primaryGuardian ? (
-                                <>
-                                  <div className="font-medium text-sm">
-                                    {primaryGuardian.name}
-                                  </div>
-                                  {primaryGuardian.email && (
-                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                      <Mail className="h-3 w-3" />
-                                      {primaryGuardian.email}
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <span className="text-sm text-muted-foreground">
-                                  -
-                                </span>
-                              );
-                            })()}
-                            {student.phone && (
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <Phone className="h-3 w-3" />
-                                {student.phone}
-                              </div>
-                            )}
+                          <div className="text-sm whitespace-nowrap">
+                            {formatDoB(student.dateOfBirth)}
                           </div>
                         </TableCell>
-                        <TableCell>
-                          {student.currentClass ? (
-                            <div className="text-sm">
-                              {student.currentClass}
-                              {student.currentSection &&
-                                `-${student.currentSection}`}
-                            </div>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">
-                              -
-                            </span>
-                          )}
-                        </TableCell>
+                        <TableCell>{renderContactNumCell(student)}</TableCell>
                         <TableCell>{getStatusBadge(student.status)}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Calendar className="h-3 w-3" />
-                            {student.createdAt &&
-                            !isNaN(new Date(student.createdAt).getTime())
-                              ? new Date(student.createdAt).toLocaleDateString()
-                              : "-"}
-                          </div>
-                        </TableCell>
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -458,55 +454,31 @@ export function StudentsTable({ students }: StudentsTableProps) {
                           className="mt-1"
                         />
                         <div className="flex-1 min-w-0 space-y-2">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {formatClassSectionDisplay(student)}
+                            </span>
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              Roll: {student.rollNumber || "-"}
+                            </span>
+                          </div>
                           <div>
                             <div className="font-medium text-sm truncate">
                               {student.fullName}
                             </div>
+                            {formatGenderLabel(student.gender) ? (
+                              <div className="text-xs text-muted-foreground">
+                                {formatGenderLabel(student.gender)}
+                              </div>
+                            ) : null}
                             <div className="text-xs text-muted-foreground truncate">
-                              Roll: {student.rollNumber || "-"}
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              PEN: {student.pen || "-"}
+                              PEN: {student.pen || "-"} · DoB:{" "}
+                              {formatDoB(student.dateOfBirth)}
                             </div>
                           </div>
-                          {(() => {
-                            const primaryGuardian = student.guardians?.find(
-                              (g) => g.isPrimary,
-                            );
-                            return primaryGuardian ? (
-                              <>
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  <span className="font-medium">Parent:</span>
-                                  <span className="truncate">
-                                    {primaryGuardian.name}
-                                  </span>
-                                </div>
-                                {primaryGuardian.email && (
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <Mail className="h-3 w-3 flex-shrink-0" />
-                                    <span className="truncate">
-                                      {primaryGuardian.email}
-                                    </span>
-                                  </div>
-                                )}
-                              </>
-                            ) : null;
-                          })()}
-                          {student.phone && (
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Phone className="h-3 w-3 flex-shrink-0" />
-                              <span className="truncate">{student.phone}</span>
-                            </div>
-                          )}
+                          <div className="text-xs">{renderContactNumCell(student)}</div>
                           <div className="flex items-center gap-2">
                             {getStatusBadge(student.status)}
-                            {student.currentClass && (
-                              <span className="text-xs text-muted-foreground">
-                                {student.currentClass}
-                                {student.currentSection &&
-                                  `-${student.currentSection}`}
-                              </span>
-                            )}
                           </div>
                         </div>
                       </div>

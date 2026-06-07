@@ -27,6 +27,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Autocomplete } from "@/components/core/autocomplete";
+import { BloodGroupFormField } from "@/components/core/blood-group-form-field";
 import { MultiSelectAutocomplete } from "@/components/core/multi-select-autocomplete";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,9 @@ const staffSchema = z
     email: z.string().email("Please enter a valid email address"),
     phoneNumber: z.string().optional(),
     gender: z.enum(["male", "female", "other"]),
+    bloodGroup: z
+      .enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"])
+      .optional(),
     staffPosition: z.string().min(2, "Position must be at least 2 characters"),
     staffType: z.enum(["teaching", "non-teaching"]),
     password: z.string().min(8, "Password must be at least 8 characters"),
@@ -168,7 +172,7 @@ export function StaffForm() {
       asArray: true,
       filter: (u) => u.role === "staff" && u.status === "active",
     });
-    
+
   const allStaffs = (allUsersData as User[]) || [];
 
   const classes = (classesData as Class[]) || [];
@@ -236,6 +240,7 @@ export function StaffForm() {
       email: "",
       phoneNumber: "",
       gender: "male",
+      bloodGroup: undefined,
       staffPosition: "",
       staffType: "teaching",
       password: "",
@@ -427,7 +432,7 @@ export function StaffForm() {
           toast.error(`${rowLabel}: At least one section must be selected.`);
           return null;
         }
-        
+
         for (const section of assignment.sections) {
           const normalizedSection = section.trim();
 
@@ -438,7 +443,9 @@ export function StaffForm() {
 
           const assignmentKey = `${subjectId}:${assignment.classId}:${normalizedSection}:${assignment.academicYear.trim()}`;
           if (seenRows.has(assignmentKey)) {
-            toast.error(`${rowLabel}: Duplicate class-section mapping detected: ${normalizedSection}.`);
+            toast.error(
+              `${rowLabel}: Duplicate class-section mapping detected: ${normalizedSection}.`,
+            );
             return null;
           }
           seenRows.add(assignmentKey);
@@ -478,6 +485,7 @@ export function StaffForm() {
         password: data.password,
         role: "staff",
         gender: data.gender,
+        ...(data.bloodGroup && { bloodGroup: data.bloodGroup }),
         position: data.staffPosition,
         staffType: data.staffType,
         subjectAssignments: existingAssignments,
@@ -745,6 +753,7 @@ export function StaffForm() {
                     </FormItem>
                   )}
                 />
+                <BloodGroupFormField control={form.control} name="bloodGroup" />
               </div>
             </div>
 
@@ -863,10 +872,13 @@ export function StaffForm() {
                           <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-zinc-100 dark:border-zinc-800">
                             <div className="flex items-center gap-2">
                               <h4 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                                {index + 1}. {subject?.name || "Selected Subject"}
+                                {index + 1}.{" "}
+                                {subject?.name || "Selected Subject"}
                               </h4>
                               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider ml-2">
-                                CODE: {subject?.code || "N/A"} | {assignmentRows.length} CLASS ASSIGNMENT{assignmentRows.length === 1 ? "" : "S"}
+                                CODE: {subject?.code || "N/A"} |{" "}
+                                {assignmentRows.length} CLASS ASSIGNMENT
+                                {assignmentRows.length === 1 ? "" : "S"}
                               </span>
                             </div>
                             <div className="flex items-center gap-3">
@@ -874,7 +886,11 @@ export function StaffForm() {
                                 type="button"
                                 variant="outline"
                                 className="h-9 px-4 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-800 font-semibold rounded-lg"
-                                onClick={() => router.push(`/${role}/subjects/${subjectId}/edit`)}
+                                onClick={() =>
+                                  router.push(
+                                    `/${role}/subjects/${subjectId}/edit`,
+                                  )
+                                }
                               >
                                 <BookOpen className="mr-2 h-4 w-4" />
                                 Edit Subject
@@ -885,7 +901,10 @@ export function StaffForm() {
                                 onClick={() =>
                                   addAssignedSubjectDraftRow(subjectId)
                                 }
-                                disabled={isLoading || assignmentRows.length >= classes.length}
+                                disabled={
+                                  isLoading ||
+                                  assignmentRows.length >= classes.length
+                                }
                               >
                                 <Plus className="h-4 w-4 mr-2" />
                                 Add Class
@@ -905,142 +924,152 @@ export function StaffForm() {
                                 ACTIONS
                               </div>
                             </div>
-                            
+
                             <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-                              {assignmentRows.map((assignment, mappingIndex) => {
-                                const classOptionsForYear =
-                                  getClassOptionsByAcademicYear(
-                                    assignment.academicYear,
-                                  ).map((option) => {
-                                    const isAlreadySelected = assignmentRows.some(
-                                      (row) =>
-                                        row.academicYear === assignment.academicYear &&
-                                        row.classId === option.value &&
-                                        row.localId !== assignment.localId
-                                    );
+                              {assignmentRows.map(
+                                (assignment, mappingIndex) => {
+                                  const classOptionsForYear =
+                                    getClassOptionsByAcademicYear(
+                                      assignment.academicYear,
+                                    ).map((option) => {
+                                      const isAlreadySelected =
+                                        assignmentRows.some(
+                                          (row) =>
+                                            row.academicYear ===
+                                              assignment.academicYear &&
+                                            row.classId === option.value &&
+                                            row.localId !== assignment.localId,
+                                        );
+                                      return {
+                                        ...option,
+                                        disabled: isAlreadySelected,
+                                      };
+                                    });
+                                  const selectedClass =
+                                    classById.get(assignment.classId) || null;
+                                  const sectionOptions = (
+                                    selectedClass?.sections || []
+                                  ).map((section) => {
+                                    const assignmentKey = `${subjectId}:${assignment.academicYear}:${assignment.classId}:${section}`;
+                                    const takenBy =
+                                      globallyAssignedSectionsMap.get(
+                                        assignmentKey,
+                                      );
+
                                     return {
-                                      ...option,
-                                      disabled: isAlreadySelected,
+                                      value: section,
+                                      label: section,
+                                      disabled: !!takenBy,
+                                      subLabel: takenBy
+                                        ? `Assigned to ${takenBy}`
+                                        : undefined,
                                     };
                                   });
-                                const selectedClass =
-                                  classById.get(assignment.classId) || null;
-                                const sectionOptions = (
-                                  selectedClass?.sections || []
-                                ).map((section) => {
-                                  const assignmentKey = `${subjectId}:${assignment.academicYear}:${assignment.classId}:${section}`;
-                                  const takenBy = globallyAssignedSectionsMap.get(assignmentKey);
-                                  
-                                  return {
-                                    value: section,
-                                    label: section,
-                                    disabled: !!takenBy,
-                                    subLabel: takenBy ? `Assigned to ${takenBy}` : undefined,
-                                  };
-                                });
 
-                                return (
-                                  <div
-                                    key={`${subjectId}-${assignment.localId}`}
-                                    className="grid grid-cols-12 gap-6 px-6 py-5 items-center hover:bg-zinc-50/30 dark:hover:bg-zinc-800/30 transition-colors"
-                                  >
-                                    <div className="col-span-3">
-                                      <Autocomplete
-                                        options={academicYearOptions}
-                                        value={assignment.academicYear}
-                                        onChange={(value) =>
-                                          updateAssignedSubjectDraft(
-                                            subjectId,
-                                            assignment.localId,
-                                            {
-                                              academicYear: value,
-                                              classId: "",
-                                              sections: [],
-                                            },
-                                          )
-                                        }
-                                        placeholder="Select year"
-                                        emptyMessage="No years"
-                                        disabled={
-                                          isLoading ||
-                                          academicYearOptions.length === 0
-                                        }
-                                      />
-                                    </div>
-                                    <div className="col-span-8 flex items-start gap-4">
-                                      <div className="w-[180px] shrink-0 pt-1">
+                                  return (
+                                    <div
+                                      key={`${subjectId}-${assignment.localId}`}
+                                      className="grid grid-cols-12 gap-6 px-6 py-5 items-center hover:bg-zinc-50/30 dark:hover:bg-zinc-800/30 transition-colors"
+                                    >
+                                      <div className="col-span-3">
                                         <Autocomplete
-                                          options={classOptionsForYear}
-                                          value={assignment.classId}
-                                          onChange={(value) => {
-                                            const selectedYearClass =
-                                              classById.get(value) || null;
-                                            updateAssignedSubjectDraft(
-                                              subjectId,
-                                              assignment.localId,
-                                              {
-                                                classId: value,
-                                                sections: [],
-                                                academicYear:
-                                                  selectedYearClass?.academicYear ||
-                                                  assignment.academicYear,
-                                              },
-                                            );
-                                          }}
-                                          placeholder="Select class"
-                                          emptyMessage="No classes available"
-                                          disabled={
-                                            isLoading ||
-                                            classOptionsForYear.length === 0
-                                          }
-                                        />
-                                      </div>
-                                      
-                                      <div className="flex-grow pt-1 min-w-0">
-                                        <MultiSelectAutocomplete
-                                          options={sectionOptions}
-                                          value={assignment.sections}
+                                          options={academicYearOptions}
+                                          value={assignment.academicYear}
                                           onChange={(value) =>
                                             updateAssignedSubjectDraft(
                                               subjectId,
                                               assignment.localId,
                                               {
-                                                sections: value,
+                                                academicYear: value,
+                                                classId: "",
+                                                sections: [],
                                               },
                                             )
                                           }
-                                          placeholder="+ Add Section"
-                                          emptyMessage="No sections available"
+                                          placeholder="Select year"
+                                          emptyMessage="No years"
                                           disabled={
                                             isLoading ||
-                                            !assignment.classId ||
-                                            sectionOptions.length === 0
+                                            academicYearOptions.length === 0
                                           }
                                         />
                                       </div>
+                                      <div className="col-span-8 flex items-start gap-4">
+                                        <div className="w-[180px] shrink-0 pt-1">
+                                          <Autocomplete
+                                            options={classOptionsForYear}
+                                            value={assignment.classId}
+                                            onChange={(value) => {
+                                              const selectedYearClass =
+                                                classById.get(value) || null;
+                                              updateAssignedSubjectDraft(
+                                                subjectId,
+                                                assignment.localId,
+                                                {
+                                                  classId: value,
+                                                  sections: [],
+                                                  academicYear:
+                                                    selectedYearClass?.academicYear ||
+                                                    assignment.academicYear,
+                                                },
+                                              );
+                                            }}
+                                            placeholder="Select class"
+                                            emptyMessage="No classes available"
+                                            disabled={
+                                              isLoading ||
+                                              classOptionsForYear.length === 0
+                                            }
+                                          />
+                                        </div>
+
+                                        <div className="flex-grow pt-1 min-w-0">
+                                          <MultiSelectAutocomplete
+                                            options={sectionOptions}
+                                            value={assignment.sections}
+                                            onChange={(value) =>
+                                              updateAssignedSubjectDraft(
+                                                subjectId,
+                                                assignment.localId,
+                                                {
+                                                  sections: value,
+                                                },
+                                              )
+                                            }
+                                            placeholder="+ Add Section"
+                                            emptyMessage="No sections available"
+                                            disabled={
+                                              isLoading ||
+                                              !assignment.classId ||
+                                              sectionOptions.length === 0
+                                            }
+                                          />
+                                        </div>
+                                      </div>
+                                      <div className="col-span-1 flex justify-end">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 w-8 p-0 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full"
+                                          onClick={() =>
+                                            removeAssignedSubjectDraftRow(
+                                              subjectId,
+                                              assignment.localId,
+                                            )
+                                          }
+                                          disabled={
+                                            isLoading ||
+                                            assignmentRows.length <= 1
+                                          }
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </div>
                                     </div>
-                                    <div className="col-span-1 flex justify-end">
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-8 w-8 p-0 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full"
-                                        onClick={() =>
-                                          removeAssignedSubjectDraftRow(
-                                            subjectId,
-                                            assignment.localId,
-                                          )
-                                        }
-                                        disabled={
-                                          isLoading || assignmentRows.length <= 1
-                                        }
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                },
+                              )}
                             </div>
                           </div>
                         </div>

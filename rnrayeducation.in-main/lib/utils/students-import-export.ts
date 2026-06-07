@@ -5,12 +5,15 @@ import type {
   StudentStatus,
 } from "@/lib/types/student.type";
 import { normalizePen } from "@/lib/utils/student-login";
+import { sanitizeImportValue } from "@/lib/utils/import-values";
+import { sortStudentsByClassSectionRoll } from "@/lib/utils/student-roll-number";
 import * as XLSX from "xlsx";
 
 /**
  * CSV Headers for student import/export template
  */
 export const CSV_HEADERS = [
+  "Scan ID",
   "Full Name",
   "Admission Number",
   "Email",
@@ -27,6 +30,7 @@ export const CSV_HEADERS = [
 ] as const;
 
 const HEADER_ALIASES = {
+  scanId: ["scan id", "scanid", "id card id", "card id", "qr id"],
   fullName: [
     "full name",
     "student name",
@@ -56,8 +60,9 @@ type RowObject = Record<string, string>;
  */
 export function exportStudentsToCSV(students: Student[]): string {
   const headers = CSV_HEADERS.join(",");
-  const rows = students.map((student) => {
+  const rows = sortStudentsByClassSectionRoll(students).map((student) => {
     const values = [
+      escapeCSVValue(student.scanId || ""),
       escapeCSVValue(student.fullName || ""),
       escapeCSVValue(student.admissionNumber || ""),
       escapeCSVValue(student.email || ""),
@@ -277,8 +282,6 @@ function parseRowsToStudents(
 } {
   const students: Partial<StudentInput>[] = [];
   const errors: string[] = [];
-  
-  console.log("rows", rows)
 
   if (rows.length === 0) {
     return { students, errors: ["No student rows found in file"] };
@@ -287,11 +290,22 @@ function parseRowsToStudents(
   rows.forEach((row, index) => {
     const rowNumber = rowNumberOffset + index;
     const fullName =
-      getRowValue(row, HEADER_ALIASES.fullName) ||
-      getRowValue(row, HEADER_ALIASES.aadhaarName);
-    const pen = normalizePen(getRowValue(row, HEADER_ALIASES.pen));
+      sanitizeImportValue(getRowValue(row, HEADER_ALIASES.fullName)) ||
+      sanitizeImportValue(getRowValue(row, HEADER_ALIASES.aadhaarName));
+    const scanId = sanitizeImportValue(getRowValue(row, HEADER_ALIASES.scanId));
+    const rawPen = getRowValue(row, HEADER_ALIASES.pen);
+    const rawStateCode = getRowValue(row, ["student state code", "state code"]);
+    const pen = normalizePen(
+      sanitizeImportValue(rawPen) || sanitizeImportValue(rawStateCode),
+    );
+    const admissionFromSheet = sanitizeImportValue(
+      getRowValue(row, HEADER_ALIASES.admissionNumber),
+    );
     const admissionNumber =
-      getRowValue(row, HEADER_ALIASES.admissionNumber) || pen;
+      admissionFromSheet ||
+      pen ||
+      scanId ||
+      `ADM-${String(rowNumber).padStart(4, "0")}`;
     const gender = normalizeGender(getRowValue(row, HEADER_ALIASES.gender));
     const currentClass = normalizeClassName(
       getRowValue(row, HEADER_ALIASES.currentClass),
@@ -299,20 +313,17 @@ function parseRowsToStudents(
     const currentSection = normalizeSection(
       getRowValue(row, HEADER_ALIASES.currentSection),
     );
-    const fatherName = getRowValue(row, HEADER_ALIASES.fatherName);
-    const motherName = getRowValue(row, HEADER_ALIASES.motherName);
+    const fatherName = sanitizeImportValue(
+      getRowValue(row, HEADER_ALIASES.fatherName),
+    );
+    const motherName = sanitizeImportValue(
+      getRowValue(row, HEADER_ALIASES.motherName),
+    );
     const socialCategoryRaw = getRowValue(row, HEADER_ALIASES.socialCategory);
     const socialCategoryInfo = parseSocialCategory(socialCategoryRaw);
 
     if (!fullName) {
       errors.push(`Row ${rowNumber}: Student name is required`);
-      return;
-    }
-
-    if (!admissionNumber) {
-      errors.push(
-        `Row ${rowNumber}: Admission Number or Student PEN is required`,
-      );
       return;
     }
 
@@ -349,6 +360,7 @@ function parseRowsToStudents(
     }
 
     const student: Partial<StudentInput> = {
+      scanId: scanId || undefined,
       firstName,
       lastName,
       admissionNumber,
@@ -436,6 +448,7 @@ export function validateStudentData(data: Partial<StudentInput>): {
 export function generateCSVTemplate(): string {
   const headers = CSV_HEADERS.join(",");
   const exampleRow = [
+    "STU-7F2K9Q8M",
     "John Doe",
     "ADM-2025-001",
     "",
@@ -598,7 +611,7 @@ function escapeCSVValue(value: string): string {
 /**
  * Parse CSV line (handles quoted values)
  */
-function parseCSVLine(line: string): string[] {
+export function parseCSVLine(line: string): string[] {
   const values: string[] = [];
   let current = "";
   let inQuotes = false;

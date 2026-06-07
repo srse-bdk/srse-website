@@ -6,6 +6,7 @@ import {
   mutate,
 } from "@atechhub/firebase";
 import type { User, UserInput, UserUpdateInput } from "@/lib/types/user.type";
+import { ensureUniqueScanId, generateUniqueScanId } from "@/lib/utils/scan-id";
 
 class StaffService {
   /**
@@ -18,18 +19,24 @@ class StaffService {
     // Step 1: Create Firebase Auth user
     const authResponse = await createUser(data.email, data.password);
 
+    const scanId = data.scanId
+      ? await ensureUniqueScanId(data.scanId)
+      : await generateUniqueScanId("STF");
+
     // Step 2: Create staff record in users database
     const userId = await mutate({
       action: "create",
       path: `users/${authResponse.localId}`,
       data: {
         uid: authResponse.localId,
+        scanId,
         name: data.name,
         email: data.email,
         password: data.password,
         role: "staff",
         status: "active",
         gender: data.gender,
+        bloodGroup: data.bloodGroup,
         position: data.position,
         staffType: data.staffType,
         phoneNumber: data.phoneNumber,

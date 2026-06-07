@@ -304,6 +304,7 @@ export function ImportStaffsDialog({
                                     <TableHeader className="sticky top-0 bg-background">
                                         <TableRow>
                                             <TableHead className="w-[50px]">Row</TableHead>
+                                            <TableHead>Scan ID</TableHead>
                                             <TableHead>Name</TableHead>
                                             <TableHead>Email</TableHead>
                                             <TableHead>Position</TableHead>
@@ -315,6 +316,9 @@ export function ImportStaffsDialog({
                                             <TableRow key={index}>
                                                 <TableCell className="font-mono text-xs">
                                                     {staff._rowNumber}
+                                                </TableCell>
+                                                <TableCell className="font-mono text-xs">
+                                                    {staff.scanId || "-"}
                                                 </TableCell>
                                                 <TableCell>
                                                     {staff.name}

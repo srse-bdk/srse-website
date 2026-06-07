@@ -1,7 +1,7 @@
 "use client";
 
 import { format, isValid, parse } from "date-fns";
-import { BarChart3, List, MapPin } from "lucide-react";
+import { BarChart3, List, MapPin, ScanLine } from "lucide-react";
 import { motion } from "motion/react";
 import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useState } from "react";
@@ -13,11 +13,13 @@ import { AdminAttendanceAnalytics } from "./admin-attendance-analytics";
 import { AdminAttendanceCharts } from "./admin-attendance-charts";
 import { AdminAttendanceMap } from "./admin-attendance-map";
 import { AttendanceFilters } from "./attendance-filters";
+import { StaffGateScanner } from "./staff-gate-scanner";
 
 const tabs = [
   { id: "map", label: "Map", icon: MapPin },
   { id: "list", label: "List", icon: List },
   { id: "charts", label: "Charts", icon: BarChart3 },
+  { id: "scanner", label: "Gate Scanner", icon: ScanLine },
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
@@ -74,7 +76,7 @@ export function AdminAttendanceView() {
         className="w-full"
       >
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
-          <TabsList className="grid w-full lg:w-auto grid-cols-3 flex-shrink-0">
+          <TabsList className="grid w-full lg:w-auto grid-cols-4 flex-shrink-0">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -136,6 +138,18 @@ export function AdminAttendanceView() {
               selectedStaffId={selectedStaffId || "all"}
               dateStr={dateStr || format(new Date(), "yyyy-MM-dd")}
             />
+          </motion.div>
+        </TabsContent>
+
+        <TabsContent value="scanner" className="mt-0">
+          <motion.div
+            key={`scanner-${activeTab}`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            <StaffGateScanner />
           </motion.div>
         </TabsContent>
       </Tabs>
