@@ -30,6 +30,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { staffService, studentService } from "@/lib/services";
+import type { Student } from "@/lib/types/student.type";
+import type { User } from "@/lib/types/user.type";
 import {
   buildStaffIdCardUpdate,
   buildStudentIdCardUpdate,
@@ -56,8 +58,27 @@ interface ImportIdCardDialogProps {
 type ParsedRow = (StudentIdCardRow | StaffIdCardRow) & {
   _matchLabel: string;
   _status: "ready" | "not_found";
-  _matchedStudent?: import("@/lib/types/student.type").Student;
+  _matchedStudent?: Student;
 };
+
+function toStudentParsedRow(row: StudentIdCardRow, match?: Student): ParsedRow {
+  const status: "ready" | "not_found" = match ? "ready" : "not_found";
+  return {
+    ...row,
+    _matchLabel: match?.fullName || "Not found",
+    _status: status,
+    _matchedStudent: match,
+  };
+}
+
+function toStaffParsedRow(row: StaffIdCardRow, match?: User): ParsedRow {
+  const status: "ready" | "not_found" = match ? "ready" : "not_found";
+  return {
+    ...row,
+    _matchLabel: match?.name || "Not found",
+    _status: status,
+  };
+}
 
 export function ImportIdCardDialog({
   kind,
@@ -117,16 +138,8 @@ export function ImportIdCardDialog({
           );
           fileErrors = errors;
           const students = await studentService.getAll();
-          const preview: ParsedRow[] = rows
-            .map((row) => {
-              const match = findStudentForIdCardRow(students, row);
-              return {
-                ...row,
-                _matchLabel: match?.fullName || "Not found",
-                _status: match ? ("ready" as const) : ("not_found" as const),
-                _matchedStudent: match,
-              };
-            })
+          const preview = rows
+            .map((row) => toStudentParsedRow(row, findStudentForIdCardRow(students, row)))
             .sort((left, right) => {
               if (left._matchedStudent && right._matchedStudent) {
                 return compareStudentsByClassSectionRoll(
@@ -147,14 +160,9 @@ export function ImportIdCardDialog({
           );
           fileErrors = errors;
           const staffs = await staffService.getAll();
-          const preview: ParsedRow[] = rows.map((row) => {
-            const match = findStaffForIdCardRow(staffs, row);
-            return {
-              ...row,
-              _matchLabel: match?.name || "Not found",
-              _status: match ? ("ready" as const) : ("not_found" as const),
-            };
-          });
+          const preview: ParsedRow[] = rows.map((row) =>
+            toStaffParsedRow(row, findStaffForIdCardRow(staffs, row)),
+          );
           setParsedRows(preview);
           setParseErrors(errors);
         }
