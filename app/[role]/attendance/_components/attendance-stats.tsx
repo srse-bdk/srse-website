@@ -24,15 +24,20 @@ export interface AttendanceStatsRef {
 
 export const AttendanceStats = forwardRef<AttendanceStatsRef>((_, ref) => {
   const user = useAppStore((state) => state.user);
-  const [todayRecord, setTodayRecord] = useState<Attendance | null>(null);
+  const [openSession, setOpenSession] = useState<Attendance | null>(null);
+  const [todaySessions, setTodaySessions] = useState<Attendance[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadTodayRecord = async () => {
     if (!user?.uid) return;
 
     try {
-      const record = await attendanceService.getTodayPunchIn(user.uid);
-      setTodayRecord(record);
+      const [open, sessions] = await Promise.all([
+        attendanceService.getTodayOpenSession(user.uid),
+        attendanceService.getTodaySessions(user.uid),
+      ]);
+      setOpenSession(open);
+      setTodaySessions(sessions);
     } catch (error) {
       console.error("Failed to load today's record:", error);
       toast.error("Failed to load attendance record");
@@ -64,32 +69,39 @@ export const AttendanceStats = forwardRef<AttendanceStatsRef>((_, ref) => {
     );
   }
 
-  const isCompleted = todayRecord?.punchOutTime !== undefined;
-  const isActive = todayRecord && !isCompleted;
+  const displaySession =
+    openSession || todaySessions[todaySessions.length - 1] || null;
+  const isActive = !!openSession;
+  const totalHoursToday = todaySessions.reduce(
+    (sum, session) => sum + (session.totalHours ?? 0),
+    0,
+  );
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Today&apos;s Status</CardTitle>
-          {todayRecord && (
+          {displaySession && (
             <Badge
-              variant={isCompleted ? "default" : "secondary"}
+              variant={isActive ? "secondary" : "default"}
               className={
-                isCompleted
-                  ? "bg-green-500 hover:bg-green-600 text-white"
-                  : "bg-blue-500 hover:bg-blue-600 text-white"
+                isActive
+                  ? "bg-blue-500 hover:bg-blue-600 text-white"
+                  : "bg-green-500 hover:bg-green-600 text-white"
               }
             >
-              {isCompleted ? (
-                <>
-                  <CheckCircle2 className="size-3" />
-                  Completed
-                </>
-              ) : (
+              {isActive ? (
                 <>
                   <Clock className="size-3" />
                   Active
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="size-3" />
+                  {todaySessions.length > 1
+                    ? `${todaySessions.length} visits`
+                    : "Completed"}
                 </>
               )}
             </Badge>
@@ -97,42 +109,34 @@ export const AttendanceStats = forwardRef<AttendanceStatsRef>((_, ref) => {
         </div>
       </CardHeader>
       <CardContent>
-        {todayRecord ? (
+        {displaySession ? (
           <div className="space-y-4">
             {/* Status Overview */}
             <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
               <div className="flex items-center gap-3">
                 <div
                   className={`size-12 rounded-full flex items-center justify-center ${
-                    isCompleted
-                      ? "bg-green-100 dark:bg-green-900/30"
-                      : "bg-blue-100 dark:bg-blue-900/30"
+                    isActive
+                      ? "bg-blue-100 dark:bg-blue-900/30"
+                      : "bg-green-100 dark:bg-green-900/30"
                   }`}
                 >
-                  {isCompleted ? (
-                    <CheckCircle2
-                      className={`size-6 ${
-                        isCompleted
-                          ? "text-green-600 dark:text-green-400"
-                          : "text-blue-600 dark:text-blue-400"
-                      }`}
-                    />
+                  {isActive ? (
+                    <Clock className="size-6 text-blue-600 dark:text-blue-400" />
                   ) : (
-                    <Clock
-                      className={`size-6 ${
-                        isCompleted
-                          ? "text-green-600 dark:text-green-400"
-                          : "text-blue-600 dark:text-blue-400"
-                      }`}
-                    />
+                    <CheckCircle2 className="size-6 text-green-600 dark:text-green-400" />
                   )}
                 </div>
                 <div>
                   <p className="text-sm font-medium">Attendance Status</p>
                   <p className="text-xs text-muted-foreground">
-                    {isCompleted
-                      ? "All done for today"
-                      : "Currently clocked in"}
+                    {isActive
+                      ? todaySessions.length > 1
+                        ? `Visit ${todaySessions.length} — currently clocked in`
+                        : "Currently clocked in"
+                      : todaySessions.length > 1
+                        ? `${todaySessions.length} visits today — punch in to return`
+                        : "Session complete — punch in to return"}
                   </p>
                 </div>
               </div>
@@ -144,7 +148,7 @@ export const AttendanceStats = forwardRef<AttendanceStatsRef>((_, ref) => {
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 <div className="size-2 rounded-full bg-green-500" />
-                Punch In
+                {isActive ? "Current punch in" : "Last punch in"}
               </div>
               <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
                 <div className="flex items-center gap-3">
@@ -153,10 +157,10 @@ export const AttendanceStats = forwardRef<AttendanceStatsRef>((_, ref) => {
                   </div>
                   <div>
                     <p className="text-sm font-medium">
-                      {formatTime(todayRecord.punchInTime)}
+                      {formatTime(displaySession.punchInTime)}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Start of shift
+                      {isActive ? "Current session" : "Latest session"}
                     </p>
                   </div>
                 </div>
@@ -169,25 +173,29 @@ export const AttendanceStats = forwardRef<AttendanceStatsRef>((_, ref) => {
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 <div
                   className={`size-2 rounded-full ${
-                    isCompleted ? "bg-red-500" : "bg-muted"
+                    displaySession.punchOutTime ? "bg-red-500" : "bg-muted"
                   }`}
                 />
                 Punch Out
               </div>
               <div
                 className={`flex items-center justify-between p-3 rounded-lg border ${
-                  isCompleted ? "bg-card" : "bg-muted/30 border-dashed"
+                  displaySession.punchOutTime
+                    ? "bg-card"
+                    : "bg-muted/30 border-dashed"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div
                     className={`size-10 rounded-lg flex items-center justify-center ${
-                      isCompleted ? "bg-red-100 dark:bg-red-900/30" : "bg-muted"
+                      displaySession.punchOutTime
+                        ? "bg-red-100 dark:bg-red-900/30"
+                        : "bg-muted"
                     }`}
                   >
                     <Clock
                       className={`size-5 ${
-                        isCompleted
+                        displaySession.punchOutTime
                           ? "text-red-600 dark:text-red-400"
                           : "text-muted-foreground"
                       }`}
@@ -195,16 +203,18 @@ export const AttendanceStats = forwardRef<AttendanceStatsRef>((_, ref) => {
                   </div>
                   <div>
                     <p className="text-sm font-medium">
-                      {isCompleted
-                        ? formatTime(todayRecord.punchOutTime!)
+                      {displaySession.punchOutTime
+                        ? formatTime(displaySession.punchOutTime)
                         : "Not punched out"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {isCompleted ? "End of shift" : "Waiting for punch out"}
+                      {displaySession.punchOutTime
+                        ? "End of session"
+                        : "Waiting for punch out"}
                     </p>
                   </div>
                 </div>
-                {isCompleted ? (
+                {displaySession.punchOutTime ? (
                   <CheckCircle2 className="size-5 text-red-500" />
                 ) : (
                   <XCircle className="size-5 text-muted-foreground" />
@@ -213,7 +223,7 @@ export const AttendanceStats = forwardRef<AttendanceStatsRef>((_, ref) => {
             </div>
 
             {/* Total Hours */}
-            {isCompleted && todayRecord.totalHours && (
+            {totalHoursToday > 0 && (
               <>
                 <Separator />
                 <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-950/20 dark:to-green-950/20 border">
@@ -222,15 +232,19 @@ export const AttendanceStats = forwardRef<AttendanceStatsRef>((_, ref) => {
                       <TrendingUp className="size-5 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">Total Hours</p>
+                      <p className="text-sm font-medium">Total Hours Today</p>
                       <p className="text-xs text-muted-foreground">
-                        Work duration
+                        {todaySessions.filter((s) => s.totalHours).length}{" "}
+                        completed session
+                        {todaySessions.filter((s) => s.totalHours).length === 1
+                          ? ""
+                          : "s"}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                      {todayRecord.totalHours}h
+                      {totalHoursToday.toFixed(2)}h
                     </p>
                   </div>
                 </div>

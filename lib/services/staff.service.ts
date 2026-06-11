@@ -162,6 +162,52 @@ class StaffService {
 
     await changePassword(staff.email, currentPassword, newPassword);
   }
+
+  async markIdCardPrinted(staffIds: string[]): Promise<number> {
+    const uniqueIds = [...new Set(staffIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return 0;
+
+    const nowISO = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (const staffId of uniqueIds) {
+      await mutate({
+        action: "update",
+        path: `users/${staffId}`,
+        data: {
+          idCardPrintedAt: nowISO,
+          updatedAt: nowISO,
+        },
+        actionBy: "admin",
+      });
+      updatedCount += 1;
+    }
+
+    return updatedCount;
+  }
+
+  async clearIdCardPrinted(staffIds: string[]): Promise<number> {
+    const uniqueIds = [...new Set(staffIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return 0;
+
+    const nowISO = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (const staffId of uniqueIds) {
+      await mutate({
+        action: "update",
+        path: `users/${staffId}`,
+        data: {
+          idCardPrintedAt: null,
+          updatedAt: nowISO,
+        },
+        actionBy: "admin",
+      });
+      updatedCount += 1;
+    }
+
+    return updatedCount;
+  }
 }
 
 export const staffService = new StaffService();

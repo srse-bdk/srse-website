@@ -15,15 +15,19 @@ import {
   GraduationCap,
   Home,
   List,
+  Printer,
   ScanLine,
   Settings,
   TrendingUp,
+  User,
   UserCheck,
   Users,
   Users2Icon,
   Video,
   Wallet,
 } from "lucide-react";
+import { useMemo } from "react";
+import { useAppStore } from "@/hooks/use-app-store";
 import type { UserRole } from "@/lib/types/user.type";
 
 export type NavigationSubItem = {
@@ -34,177 +38,277 @@ export type NavigationSubItem = {
 
 export type NavigationItem = {
   title: string;
-  url?: string; // Optional - if has subItems, url is optional
+  url?: string;
   icon: React.ElementType;
   roles: UserRole[];
   subItems?: NavigationSubItem[];
 };
 
-export function useMenuItems() {
-  const navigationItems: NavigationItem[] = [
+const ADMIN_NAVIGATION: NavigationItem[] = [
+  {
+    title: "Dashboard",
+    url: "/dashboard",
+    icon: Home,
+    roles: ["admin"],
+  },
+  {
+    title: "Staffs",
+    icon: Users2Icon,
+    roles: ["admin"],
+    subItems: [
+      { title: "Staffs List", url: "/staffs", icon: List },
+      { title: "Teaching", url: "/staffs?type=teaching", icon: Users2Icon },
+      {
+        title: "Non-teaching",
+        url: "/staffs?type=non-teaching",
+        icon: Users,
+      },
+      { title: "Attendance", url: "/attendance", icon: Clock },
+    ],
+  },
+  {
+    title: "Students",
+    icon: GraduationCap,
+    roles: ["admin"],
+    subItems: [
+      { title: "Students List", url: "/students", icon: List },
+      {
+        title: "Class Enrollment",
+        url: "/students/enrollment",
+        icon: UserCheck,
+      },
+      {
+        title: "Class Management",
+        url: "/students/enrollment/classes",
+        icon: BookOpen,
+      },
+      {
+        title: "Attendance",
+        url: "/students/attendance",
+        icon: Calendar,
+      },
+    ],
+  },
+  {
+    title: "Blogs",
+    url: "/blogs",
+    icon: FileText,
+    roles: ["admin"],
+  },
+  {
+    title: "Send Notifications",
+    url: "/notifications",
+    icon: Bell,
+    roles: ["admin"],
+  },
+  {
+    title: "Subjects",
+    url: "/subjects",
+    icon: BookText,
+    roles: ["admin"],
+  },
+  {
+    title: "Time Table",
+    url: "/time-table",
+    icon: CalendarClock,
+    roles: ["admin"],
+  },
+  {
+    title: "Gate Scanner",
+    url: "/scanner",
+    icon: ScanLine,
+    roles: ["admin"],
+  },
+  {
+    title: "ID Card Data",
+    icon: CreditCard,
+    roles: ["admin"],
+    subItems: [
+      { title: "Export / Import", url: "/id-cards", icon: CreditCard },
+      { title: "Print ID Cards", url: "/id-cards/print", icon: Printer },
+    ],
+  },
+  {
+    title: "Certificates",
+    icon: Award,
+    roles: ["admin"],
+    subItems: [
+      {
+        title: "Experience Certificate",
+        url: "/certificates/experience",
+        icon: Briefcase,
+      },
+      {
+        title: "Appointment Letter",
+        url: "/certificates/appointment",
+        icon: FileCheck,
+      },
+      {
+        title: "Increment Letter",
+        url: "/certificates/increment",
+        icon: TrendingUp,
+      },
+    ],
+  },
+  {
+    title: "Fees Management",
+    icon: Wallet,
+    roles: ["admin"],
+    subItems: [
+      { title: "Dashboard", url: "/fees", icon: Home },
+      { title: "Fee Structure", url: "/fees/structure", icon: Settings },
+      {
+        title: "Financial Activities",
+        url: "/financial-activities",
+        icon: BadgeIndianRupee,
+      },
+      {
+        title: "Income / Expenses",
+        url: "/income-expenses",
+        icon: TrendingUp,
+      },
+    ],
+  },
+  {
+    title: "Parents",
+    url: "/parents",
+    icon: Users,
+    roles: ["admin"],
+  },
+  {
+    title: "Video Management",
+    url: "/video-management",
+    icon: Video,
+    roles: ["admin"],
+  },
+];
+
+function buildStaffNavigation(userId?: string): NavigationItem[] {
+  const items: NavigationItem[] = [
     {
       title: "Dashboard",
       url: "/dashboard",
       icon: Home,
-      roles: ["admin", "staff", "parent"],
+      roles: ["staff"],
     },
     {
-      title: "Staffs",
-      icon: Users2Icon,
-      roles: ["admin", "staff"],
-      subItems: [
-        { title: "Staffs List", url: "/staffs", icon: List },
-        { title: "Teaching", url: "/staffs?type=teaching", icon: Users2Icon },
-        {
-          title: "Non-teaching",
-          url: "/staffs?type=non-teaching",
-          icon: Users,
-        },
-        { title: "Attendance", url: "/attendance", icon: Clock },
-      ],
+      title: "My Attendance",
+      url: "/attendance",
+      icon: Clock,
+      roles: ["staff"],
     },
-    {
-      title: "Students",
-      icon: GraduationCap,
-      roles: ["admin"],
-      subItems: [
-        { title: "Students List", url: "/students", icon: List },
-        {
-          title: "Class Enrollment",
-          url: "/students/enrollment",
-          icon: UserCheck,
-        },
-        {
-          title: "Class Management",
-          url: "/students/enrollment/classes",
-          icon: BookOpen,
-        },
-        {
-          title: "Attendance",
-          url: "/students/attendance",
-          icon: Calendar,
-        },
-      ],
-    },
-    {
-      title: "Blogs",
-      url: "/blogs",
-      icon: FileText,
-      roles: ["admin"],
-    },
-    {
-      title: "Send Notifications",
-      url: "/notifications",
-      icon: Bell,
-      roles: ["admin"],
-    },
-    {
-      title: "Subjects",
-      url: "/subjects",
-      icon: BookText,
-      roles: ["admin"],
-    },
-    {
-      title: "Time Table",
-      url: "/time-table",
-      icon: CalendarClock,
-      roles: ["admin", "staff"],
-    },
-    {
-      title: "Gate Scanner",
-      url: "/scanner",
-      icon: ScanLine,
-      roles: ["admin", "staff"],
-    },
-    {
-      title: "ID Card Data",
-      url: "/id-cards",
-      icon: CreditCard,
-      roles: ["admin"],
-    },
-    {
-      title: "Certificates",
-      icon: Award,
-      roles: ["admin"],
-      subItems: [
-        {
-          title: "Experience Certificate",
-          url: "/certificates/experience",
-          icon: Briefcase,
-        },
-        {
-          title: "Appointment Letter",
-          url: "/certificates/appointment",
-          icon: FileCheck,
-        },
-        {
-          title: "Increment Letter",
-          url: "/certificates/increment",
-          icon: TrendingUp,
-        },
-      ],
-    },
+  ];
 
+  if (userId) {
+    items.push({
+      title: "My Schedule",
+      url: `/staffs/${userId}/time-table`,
+      icon: CalendarClock,
+      roles: ["staff"],
+    });
+  }
+
+  return items;
+}
+
+function buildStudentNavigation(studentId?: string): NavigationItem[] {
+  const items: NavigationItem[] = [
     {
-      title: "Fees Management",
-      icon: Wallet,
-      roles: ["admin", "staff"],
-      subItems: [
-        { title: "Dashboard", url: "/fees", icon: Home },
-        { title: "Fee Structure", url: "/fees/structure", icon: Settings },
-        {
-          title: "Financial Activities",
-          url: "/financial-activities",
-          icon: BadgeIndianRupee,
-        },
-        {
-          title: "Income / Expenses",
-          url: "/income-expenses",
-          icon: TrendingUp,
-        },
-      ],
-    },
-    {
-      title: "Parents",
-      url: "/parents",
-      icon: Users,
-      roles: ["admin"],
-    },
-    {
-      title: "Video Management",
-      url: "/video-management",
-      icon: Video,
-      roles: ["admin"],
-    },
-    {
-      title: "My Children",
-      url: "/children",
-      icon: Baby,
-      roles: ["parent"],
+      title: "Dashboard",
+      url: "/dashboard",
+      icon: Home,
+      roles: ["student"],
     },
     {
       title: "Fee Details",
       url: "/fees",
       icon: Wallet,
-      roles: ["parent", "student"],
+      roles: ["student"],
     },
-  ];
-
-  const settingsItems = [
     {
-      title: "Settings",
-      url: "/settings",
-      icon: Settings,
+      title: "Class Time Table",
+      url: "/time-table",
+      icon: CalendarClock,
+      roles: ["student"],
     },
   ];
 
-  const filteredSettingsItems = (role: UserRole) => {
-    if (role === "student") return [];
-    return settingsItems;
-  };
+  if (studentId) {
+    items.push({
+      title: "My Profile",
+      url: `/students/${studentId}`,
+      icon: User,
+      roles: ["student"],
+    });
+  }
+
+  return items;
+}
+
+const PARENT_NAVIGATION: NavigationItem[] = [
+  {
+    title: "Dashboard",
+    url: "/dashboard",
+    icon: Home,
+    roles: ["parent"],
+  },
+  {
+    title: "My Children",
+    url: "/children",
+    icon: Baby,
+    roles: ["parent"],
+  },
+  {
+    title: "Fee Details",
+    url: "/fees",
+    icon: Wallet,
+    roles: ["parent"],
+  },
+  {
+    title: "Time Table",
+    url: "/time-table",
+    icon: CalendarClock,
+    roles: ["parent"],
+  },
+];
+
+export function useMenuItems() {
+  const user = useAppStore((state) => state.user);
+  const role = user?.role ?? "admin";
+
+  const navigationItems = useMemo(() => {
+    switch (role) {
+      case "admin":
+        return ADMIN_NAVIGATION;
+      case "staff":
+        return buildStaffNavigation(user?.uid);
+      case "student":
+        return buildStudentNavigation(user?.studentId);
+      case "parent":
+        return PARENT_NAVIGATION;
+      default:
+        return [];
+    }
+  }, [role, user?.uid, user?.studentId]);
+
+  const settingsItems = useMemo(
+    () => [
+      {
+        title: "Settings",
+        url: "/settings",
+        icon: Settings,
+      },
+    ],
+    [],
+  );
 
   return {
     navigationItems,
-    settingsItems: filteredSettingsItems,
+    settingsItems,
   };
+}
+
+/** @deprecated Use useMenuItems hook — kept for type exports and static admin list */
+export function getAdminNavigationItems(): NavigationItem[] {
+  return ADMIN_NAVIGATION;
 }

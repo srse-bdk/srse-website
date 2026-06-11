@@ -9,4 +9,4 @@ export * from "./subject.service";
 export * from "./time-table.service";
 export * from "./parent.service";
 export * from "./fee.service";
-export * from "./financial.service";
+export * from "./profile-photo.service";

@@ -6,7 +6,6 @@ import { Plus, Calendar, Clock, BookOpen, Users, Download, Trash2, MoreVertical,
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import type { TimeTable } from "@/lib/types/time-table.type";
-import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { timeTableService } from "@/lib/services/time-table.service";
@@ -18,14 +17,34 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { motion, AnimatePresence } from "motion/react";
-import { useRef, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import { TimeTablePrintView } from "@/components/time-table/print-view";
+import { useAppStore } from "@/hooks/use-app-store";
+import { studentService } from "@/lib/services";
 
 export default function TimeTablePage() {
     const router = useRouter();
     const params = useParams();
     const role = params.role as string;
+    const user = useAppStore((state) => state.user);
+    const isAdmin = user?.role === "admin";
+    const [studentClass, setStudentClass] = useState<{
+        currentClass?: string;
+        currentSection?: string;
+    } | null>(null);
+
+    useEffect(() => {
+        if (user?.role !== "student" || !user.studentId) return;
+        studentService.getById(user.studentId).then((student) => {
+            if (student) {
+                setStudentClass({
+                    currentClass: student.currentClass,
+                    currentSection: student.currentSection,
+                });
+            }
+        });
+    }, [user?.role, user?.studentId]);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedTimeTable, setSelectedTimeTable] = useState<TimeTable | null>(null);
     const printRef = useRef<HTMLDivElement>(null);
@@ -51,7 +70,22 @@ export default function TimeTablePage() {
     });
     const timeTables = (timeTablesData as TimeTable[]) || [];
 
-    const filteredTimeTables = timeTables.filter(tt =>
+    const roleScopedTimeTables = useMemo(() => {
+        if (user?.role === "student" && studentClass?.currentClass) {
+            return timeTables.filter(
+                (tt) =>
+                    tt.className === studentClass.currentClass &&
+                    (!studentClass.currentSection ||
+                        tt.section === studentClass.currentSection),
+            );
+        }
+        if (user?.role === "parent") {
+            return timeTables;
+        }
+        return timeTables;
+    }, [timeTables, user?.role, studentClass]);
+
+    const filteredTimeTables = roleScopedTimeTables.filter(tt =>
         tt.className.toLowerCase().includes(searchTerm.toLowerCase()) ||
         tt.section.toLowerCase().includes(searchTerm.toLowerCase()) ||
         tt.academicYear.toLowerCase().includes(searchTerm.toLowerCase())
@@ -78,19 +112,25 @@ export default function TimeTablePage() {
                     </h1>
                     <p className="text-muted-foreground flex items-center gap-2">
                         <Calendar className="h-4 w-4" />
-                        Manage schedules for all classes and sections
+                        {isAdmin
+                            ? "Manage schedules for all classes and sections"
+                            : user?.role === "student"
+                              ? "Your class schedule"
+                              : "View class schedules"}
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-primary/5 rounded-xl border border-primary/10">
-                        <Sparkles className="h-4 w-4 text-primary" />
-                        <span className="text-sm font-semibold text-primary">{timeTables.length} Generated</span>
+                {isAdmin ? (
+                    <div className="flex items-center gap-3">
+                        <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-primary/5 rounded-xl border border-primary/10">
+                            <Sparkles className="h-4 w-4 text-primary" />
+                            <span className="text-sm font-semibold text-primary">{timeTables.length} Generated</span>
+                        </div>
+                        <Button onClick={() => router.push(`/${role}/time-table/generate`)} className="gap-2 shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95">
+                            <Plus className="h-4 w-4" />
+                            Generate New
+                        </Button>
                     </div>
-                    <Button onClick={() => router.push(`/${role}/time-table/generate`)} className="gap-2 shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95">
-                        <Plus className="h-4 w-4" />
-                        Generate New
-                    </Button>
-                </div>
+                ) : null}
             </div>
 
             {/* Search & Filter Bar */}
@@ -127,12 +167,12 @@ export default function TimeTablePage() {
                                 {searchTerm ? "No results match your search." : "Start by generating a new schedule for your class."}
                             </p>
                         </div>
-                        {!searchTerm && (
+                        {!searchTerm && isAdmin ? (
                             <Button onClick={() => router.push(`/${role}/time-table/generate`)} variant="outline" className="mt-4 gap-2">
                                 <Plus className="h-4 w-4" />
                                 Generate First Schedule
                             </Button>
-                        )}
+                        ) : null}
                     </CardContent>
                 </Card>
             ) : (
@@ -147,24 +187,35 @@ export default function TimeTablePage() {
                             >
                                 <Card className="group hover:border-primary/30 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 overflow-hidden border-2 border-transparent bg-card/80 backdrop-blur">
                                     <div className="absolute top-0 right-0 p-2">
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <MoreVertical className="h-4 w-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuItem onClick={() => router.push(`/${role}/time-table/generate?editId=${tt.id}`)}>
-                                                    <Pencil className="h-4 w-4 mr-2" /> Edit
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => router.push(`/${role}/time-table/${tt.id}`)}>
-                                                    <Eye className="h-4 w-4 mr-2" /> View
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(tt.id)}>
-                                                    <Trash2 className="h-4 w-4 mr-2" /> Delete
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
+                                        {isAdmin ? (
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <MoreVertical className="h-4 w-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onClick={() => router.push(`/${role}/time-table/generate?editId=${tt.id}`)}>
+                                                        <Pencil className="h-4 w-4 mr-2" /> Edit
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => router.push(`/${role}/time-table/${tt.id}`)}>
+                                                        <Eye className="h-4 w-4 mr-2" /> View
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(tt.id)}>
+                                                        <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        ) : (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                onClick={() => router.push(`/${role}/time-table/${tt.id}`)}
+                                            >
+                                                <Eye className="h-4 w-4" />
+                                            </Button>
+                                        )}
                                     </div>
 
                                     <CardHeader className="pb-4">

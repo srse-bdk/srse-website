@@ -86,6 +86,8 @@ export interface Student extends BaseEntity {
   socialCategoryCode?: number;
   fatherName?: string;
   motherName?: string;
+  /** Set when ID card was bulk-printed (phased print tracking). */
+  idCardPrintedAt?: string;
 }
 
 // Input types for student creation
@@ -118,6 +120,8 @@ export interface StudentInput {
   socialCategoryCode?: number;
   fatherName?: string;
   motherName?: string;
+  /** Set when ID card was bulk-printed (phased print tracking). */
+  idCardPrintedAt?: string;
 }
 
 export interface StudentUpdateInput {
@@ -149,4 +153,6 @@ export interface StudentUpdateInput {
   socialCategoryCode?: number;
   fatherName?: string;
   motherName?: string;
+  documents?: StudentDocument[];
+  idCardPrintedAt?: string;
 }

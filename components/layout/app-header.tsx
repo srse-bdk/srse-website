@@ -21,7 +21,7 @@ export function AppHeader() {
         <CommandPalette
           role={role}
           navigationItems={navigationItems}
-          settingsItems={settingsItems(role)}
+          settingsItems={settingsItems}
         />
       </div>
 

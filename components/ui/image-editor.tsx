@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { optimizeImage } from "@/lib/utils/image-optimization";
+import { PROFILE_PHOTO_OPTIMIZATION } from "@/lib/config/profile-photo";
 import { Crop, RotateCw, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactCrop, {
@@ -30,6 +31,7 @@ interface ImageEditorProps {
   circularCrop?: boolean;
   title?: string;
   description?: string;
+  optimizationOptions?: Parameters<typeof optimizeImage>[1];
 }
 
 export function ImageEditor({
@@ -40,7 +42,8 @@ export function ImageEditor({
   aspectRatio = 1,
   circularCrop = true,
   title = "Edit Image",
-  description = "Crop, rotate, and optimize your image. It will be converted to WEBP format for better compression.",
+  description = "Crop and optimize your photo. It will be saved as WEBP, max 150 KB.",
+  optimizationOptions = PROFILE_PHOTO_OPTIMIZATION,
 }: ImageEditorProps) {
   const [imgSrc, setImgSrc] = useState<string>("");
   const [crop, setCrop] = useState<CropType>();
@@ -62,23 +65,28 @@ export function ImageEditor({
     }
   }, [imageFile, open]);
 
-  // Center crop on image load
+  // Portrait photos: bias crop toward the top so heads are not clipped on ID cards.
   const onImageLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
       const { naturalWidth, naturalHeight } = e.currentTarget;
-      const crop = centerCrop(
-        makeAspectCrop(
-          {
-            unit: "%",
-            width: 90,
-          },
-          aspectRatio,
-          naturalWidth,
-          naturalHeight,
-        ),
+      const baseCrop = makeAspectCrop(
+        {
+          unit: "%",
+          width: 90,
+        },
+        aspectRatio,
         naturalWidth,
         naturalHeight,
       );
+
+      const isPortrait = naturalHeight > naturalWidth * 1.05;
+      const crop = isPortrait
+        ? {
+            ...baseCrop,
+            y: Math.min(baseCrop.y ?? 0, 3),
+          }
+        : centerCrop(baseCrop, naturalWidth, naturalHeight);
+
       setCrop(crop);
     },
     [aspectRatio],
@@ -173,12 +181,7 @@ export function ImageEditor({
       }
 
       // Optimize and compress the cropped image
-      const optimizedFile = await optimizeImage(croppedFile, {
-        maxSizeMB: 0.5,
-        maxWidthOrHeight: 1920,
-        quality: 0.85,
-        convertToWebP: true,
-      });
+      const optimizedFile = await optimizeImage(croppedFile, optimizationOptions);
 
       onSave(optimizedFile);
     } catch (error) {

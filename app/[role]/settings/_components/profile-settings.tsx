@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ImageEditor } from "@/components/ui/image-editor";
 import { formatFileSize } from "@/lib/utils/image-optimization";
+import { prepareProfilePhotoFile } from "@/lib/utils/profile-photo";
 import { useAppStore } from "@/hooks/use-app-store";
 import { useUploadThing } from "@/lib/utils/uploadthing";
 import { mutate } from "@atechhub/firebase";
@@ -207,42 +208,41 @@ export function ProfileSettings() {
 
     setShowImageEditor(false);
 
-    // Show file size info
+    let prepared: File;
+    try {
+      prepared = await prepareProfilePhotoFile(optimizedFile);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Photo must be 150 KB or less";
+      toast.error(message);
+      return;
+    }
+
     const originalSize = selectedFile
       ? formatFileSize(selectedFile.size)
       : "0 KB";
-    const optimizedSize = formatFileSize(optimizedFile.size);
-    const compressionRatio = selectedFile
-      ? ((1 - optimizedFile.size / selectedFile.size) * 100).toFixed(1)
-      : "0";
+    const optimizedSize = formatFileSize(prepared.size);
 
     toast.success(
-      `Image optimized: ${originalSize} → ${optimizedSize} (${compressionRatio}% reduction)`,
+      `Photo optimized: ${originalSize} → ${optimizedSize} (max 150 KB)`,
     );
 
-    // Delete old file BEFORE uploading new one (if fileKey exists)
-    // Note: UploadThing doesn't support overwriting files - each upload creates a new fileKey
-    // By deleting first, we ensure only one profile picture file exists per user
     if (previousFileKey) {
       try {
         await deleteOldImage(previousFileKey);
-        console.log("Deleted old file before upload:", previousFileKey);
       } catch (error) {
         console.error("Error deleting old file:", error);
-        // Continue with upload even if deletion fails
       }
     }
 
-    // Auto-upload optimized file with custom filename
     try {
       await startUpload([
-        new File([optimizedFile], `${user.uid}-${Date.now()}-profile.webp`, {
+        new File([prepared], `${user.uid}-${Date.now()}-profile.webp`, {
           type: "image/webp",
         }),
       ]);
     } catch (error) {
       console.error("Error uploading image:", error);
-      // Reset previous fileKey on error
       setPreviousFileKey(null);
     }
   };
@@ -409,6 +409,10 @@ export function ProfileSettings() {
                 <ImageIcon className="h-4 w-4" />
                 Profile Picture
               </Label>
+              <p className="text-xs text-muted-foreground">
+                Max 150 KB after compression. Staff photos appear here and on
+                ID cards.
+              </p>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                 <div className="relative">
                   <Avatar className="size-20 sm:size-24">
@@ -517,7 +521,15 @@ export function ProfileSettings() {
                   Role
                 </Label>
                 <Input
-                  value={user?.role === "admin" ? "Admin" : "Staff"}
+                  value={
+                    user?.role === "admin"
+                      ? "Admin"
+                      : user?.role === "student"
+                        ? "Student"
+                        : user?.role === "parent"
+                          ? "Parent"
+                          : "Staff"
+                  }
                   readOnly
                   className="bg-muted cursor-not-allowed capitalize"
                 />

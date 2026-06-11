@@ -8,8 +8,8 @@ export const marketingSite = {
   url: "https://rnrayeducation.in",
   domain: "rnrayeducation.in",
   contactEmail: "srschoolofexcellence@gmail.com",
-  contactPhone: "9437258670",
-  contactPhones: ["9437258670", "9438465475", "9437530949"],
+  contactPhone: "9438465475",
+  contactPhones: ["9438465475", "9437530949"],
   landline: "06784-241271",
   address: {
     street: "Acharya Nagar, Near Omkareshwar Temple",

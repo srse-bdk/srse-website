@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -29,13 +29,18 @@ import {
   AlertCircle,
   Download,
 } from "lucide-react";
-import { normalizePen } from "@/lib/utils/student-login";
-import { getNextRollNumberForClassSection } from "@/lib/utils/student-roll-number";
 import {
-  parseStudentsFile,
-  validateStudentData,
+  buildEnrollmentRollIndex,
+  reserveRollNumberInIndex,
+} from "@/lib/utils/student-roll-number";
+import {
+  buildStudentImportMatchIndexes,
+  findExistingStudentIdForImport,
   generateCSVTemplate,
   downloadCSV,
+  parseStudentsFile,
+  registerStudentInImportIndexes,
+  validateStudentData,
 } from "@/lib/utils/students-import-export";
 import { classService, enrollmentService, studentService } from "@/lib/services";
 import type { Class } from "@/lib/types/class.type";
@@ -53,10 +58,7 @@ interface ParsedStudent extends Partial<StudentInput> {
   _rowNumber: number;
   _errors: string[];
   _valid: boolean;
-}
-
-interface IndexedStudent {
-  id: string;
+  _importAction?: "create" | "update" | "skip";
 }
 
 function normalizeClassName(value?: string): string {
@@ -181,6 +183,51 @@ export function ImportStudentsDialog({
   const [updateExisting, setUpdateExisting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const annotateImportActions = async (
+    students: ParsedStudent[],
+    shouldUpdateExisting: boolean,
+  ): Promise<ParsedStudent[]> => {
+    const existingStudents = await studentService.getAll();
+    const indexes = buildStudentImportMatchIndexes(existingStudents);
+    const annotated: ParsedStudent[] = [];
+
+    for (const student of students) {
+      if (!student._valid) {
+        annotated.push({ ...student, _importAction: undefined });
+        continue;
+      }
+
+      const existingId = findExistingStudentIdForImport(student, indexes);
+      if (existingId) {
+        annotated.push({
+          ...student,
+          _importAction: shouldUpdateExisting ? "update" : "skip",
+        });
+        continue;
+      }
+
+      registerStudentInImportIndexes(`preview-${student._rowNumber}`, student, indexes);
+      annotated.push({ ...student, _importAction: "create" });
+    }
+
+    return annotated;
+  };
+
+  useEffect(() => {
+    if (parsedStudents.length === 0) return;
+
+    let cancelled = false;
+    annotateImportActions(parsedStudents, updateExisting).then((annotated) => {
+      if (!cancelled) {
+        setParsedStudents(annotated);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [updateExisting]);
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (!selectedFile) return;
@@ -201,7 +248,7 @@ export function ImportStudentsDialog({
 
     // Read and parse file
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const content = e.target?.result;
       if (!content) {
         toast.error("Failed to read file");
@@ -210,24 +257,35 @@ export function ImportStudentsDialog({
 
       const { students, errors } = parseStudentsFile(selectedFile.name, content);
 
-      // Validate each student
       const validatedStudents: ParsedStudent[] = students.map(
         (student, index) => {
           const validation = validateStudentData(student);
           return {
             ...student,
-            _rowNumber: index + 2, // +2 because row 1 is header
+            _rowNumber: index + 2,
             _errors: validation.errors,
             _valid: validation.valid,
           };
-        }
+        },
       );
 
-      setParsedStudents(validatedStudents);
+      const annotatedStudents = await annotateImportActions(
+        validatedStudents,
+        updateExisting,
+      );
+
+      setParsedStudents(annotatedStudents);
       setParseErrors(errors);
 
+      const duplicateCount = annotatedStudents.filter(
+        (student) => student._importAction === "skip",
+      ).length;
       if (errors.length > 0) {
         toast.warning(`Found ${errors.length} error(s) in file`);
+      } else if (duplicateCount > 0 && !updateExisting) {
+        toast.info(
+          `${duplicateCount} row(s) match existing students and will be skipped. Enable "Update existing students" to refresh them.`,
+        );
       }
     };
 
@@ -273,23 +331,20 @@ export function ImportStudentsDialog({
       let enrollmentErrorCount = 0;
 
       const existingStudents = await studentService.getAll();
+      const validStudentIds = new Set(existingStudents.map((student) => student.id));
+      const orphanedEnrollmentsRemoved =
+        await enrollmentService.deleteOrphanedEnrollments(validStudentIds);
+
       const [classes, enrollments] = await Promise.all([
         classService.getAll(),
         enrollmentService.getAll(),
       ]);
-      const studentsByAdmission = new Map<string, IndexedStudent>();
-      const studentsByPen = new Map<string, IndexedStudent>();
+      const importIndexes = buildStudentImportMatchIndexes(existingStudents);
       const enrollmentsByStudentId = new Map<string, Enrollment[]>();
-
-      for (const existingStudent of existingStudents) {
-        const admissionKey = (existingStudent.admissionNumber || "")
-          .trim()
-          .toLowerCase();
-        const penKey = normalizePen(existingStudent.pen || "");
-
-        if (admissionKey) studentsByAdmission.set(admissionKey, { id: existingStudent.id });
-        if (penKey) studentsByPen.set(penKey, { id: existingStudent.id });
-      }
+      const enrollmentRollIndex = buildEnrollmentRollIndex(
+        enrollments,
+        validStudentIds,
+      );
 
       for (const enrollment of enrollments) {
         const list = enrollmentsByStudentId.get(enrollment.studentId) || [];
@@ -313,13 +368,13 @@ export function ImportStudentsDialog({
           );
           if (alreadyActive) return false;
 
-          const rollNumber =
-            String(student.rollNumber || "").trim() ||
-            getNextRollNumberForClassSection(
-              existingStudents,
-              student.currentClass || "",
-              student.currentSection || "",
-            );
+          const rollNumber = reserveRollNumberInIndex(
+            enrollmentRollIndex,
+            resolved.classId,
+            resolved.section,
+            String(student.rollNumber || "").trim() || undefined,
+          );
+          student.rollNumber = rollNumber;
 
           const enrollmentId = await enrollmentService.enroll({
             studentId,
@@ -360,56 +415,53 @@ export function ImportStudentsDialog({
 
       for (const student of validStudents) {
         try {
-          const admissionKey = (student.admissionNumber || "").trim().toLowerCase();
-          const penKey = normalizePen(student.pen || "");
+          const existingStudentId = findExistingStudentIdForImport(
+            student,
+            importIndexes,
+          );
 
-          const existingStudent =
-            (penKey ? studentsByPen.get(penKey) : undefined) ||
-            (admissionKey ? studentsByAdmission.get(admissionKey) : undefined);
-
-          if (existingStudent) {
+          if (existingStudentId) {
             if (!updateExisting) {
               skippedCount++;
               continue;
             }
 
             const updateData = toStudentUpdateInput(student);
-            await studentService.update(existingStudent.id, updateData);
+            await studentService.update(existingStudentId, updateData);
             updatedCount++;
-            const enrolled = await ensureEnrollmentForStudent(existingStudent.id, student);
-            if (enrolled) enrollmentsCreatedCount++;
-            continue;
-          }
-
-          if (
-            !student.rollNumber?.trim() &&
-            student.currentClass?.trim() &&
-            student.currentSection?.trim()
-          ) {
-            student.rollNumber = getNextRollNumberForClassSection(
-              existingStudents,
-              student.currentClass,
-              student.currentSection,
+            const enrolled = await ensureEnrollmentForStudent(
+              existingStudentId,
+              student,
             );
+            if (enrolled) enrollmentsCreatedCount++;
+            registerStudentInImportIndexes(existingStudentId, student, importIndexes);
+            continue;
           }
 
           const studentId = await studentService.create(student as StudentInput);
           createdCount++;
-          existingStudents.push({
+          const createdRecord = await studentService.getById(studentId);
+          if (createdRecord?.rollNumber) {
+            student.rollNumber = createdRecord.rollNumber;
+          }
+          const enrolled = await ensureEnrollmentForStudent(studentId, student);
+          if (enrolled) enrollmentsCreatedCount++;
+
+          const createdStudent = {
             id: studentId,
             status: student.status || "active",
             currentClass: student.currentClass,
             currentSection: student.currentSection,
             rollNumber: student.rollNumber,
             fullName: `${student.firstName || ""} ${student.lastName || ""}`.trim(),
-          } as Student);
-          const enrolled = await ensureEnrollmentForStudent(studentId, student);
-          if (enrolled) enrollmentsCreatedCount++;
-
-          // Keep in-memory index in sync for duplicates within same import file
-          const indexedStudent: IndexedStudent = { id: studentId };
-          if (admissionKey) studentsByAdmission.set(admissionKey, indexedStudent);
-          if (penKey) studentsByPen.set(penKey, indexedStudent);
+            firstName: student.firstName || "",
+            lastName: student.lastName || "",
+            admissionNumber: student.admissionNumber || "",
+            pen: student.pen,
+            scanId: student.scanId,
+          } as Student;
+          existingStudents.push(createdStudent);
+          registerStudentInImportIndexes(studentId, createdStudent, importIndexes);
         } catch (error) {
           console.error(
             `Error importing student ${student._rowNumber}:`,
@@ -435,6 +487,9 @@ export function ImportStudentsDialog({
             : []),
           ...(enrollmentErrorCount > 0
             ? [`${enrollmentErrorCount} enrollment failures`]
+            : []),
+          ...(orphanedEnrollmentsRemoved > 0
+            ? [`${orphanedEnrollmentsRemoved} orphan enrollments removed`]
             : []),
           ...(errorCount > 0 ? [`${errorCount} failed`] : []),
         ];
@@ -482,9 +537,9 @@ export function ImportStudentsDialog({
             Import Students from File
           </DialogTitle>
           <DialogDescription>
-            Upload a CSV or Excel file to import multiple students at once.
-            Student PEN is optional. SDMS values like NA are ignored. If admission
-            number is missing, one is generated automatically.
+            Upload a CSV or Excel file to import students. PEN must be a valid
+            10–11 digit student PEN (state codes are not used). Existing students
+            are matched by PEN, admission number, or name + class + section.
           </DialogDescription>
         </DialogHeader>
 
@@ -606,6 +661,7 @@ export function ImportStudentsDialog({
                       <TableHead>Admission No</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="w-[110px]">Import</TableHead>
                       <TableHead className="w-[100px]">Validation</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -638,6 +694,29 @@ export function ImportStudentsDialog({
                           >
                             {student.status || "active"}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {student._importAction === "create" ? (
+                            <Badge variant="outline" className="text-xs">
+                              New
+                            </Badge>
+                          ) : student._importAction === "update" ? (
+                            <Badge
+                              variant="outline"
+                              className="bg-blue-50 text-blue-700 border-blue-200 text-xs"
+                            >
+                              Update
+                            </Badge>
+                          ) : student._importAction === "skip" ? (
+                            <Badge
+                              variant="outline"
+                              className="bg-amber-50 text-amber-800 border-amber-200 text-xs"
+                            >
+                              Skip
+                            </Badge>
+                          ) : (
+                            "-"
+                          )}
                         </TableCell>
                         <TableCell>
                           {student._valid ? (

@@ -137,3 +137,52 @@ export function getNextRollNumberForClassSection(
 
   return String(Math.max(...rollNumbers) + 1);
 }
+
+export type EnrollmentRollIndex = Map<string, Set<string>>;
+
+export function buildEnrollmentRollIndex(
+  enrollments: Array<{ classId: string; section: string; rollNumber: string; status?: string; studentId: string }>,
+  validStudentIds?: Set<string>,
+): EnrollmentRollIndex {
+  const index: EnrollmentRollIndex = new Map();
+
+  for (const enrollment of enrollments) {
+    if (enrollment.status && enrollment.status !== "active") continue;
+    if (validStudentIds && !validStudentIds.has(enrollment.studentId)) continue;
+
+    const key = `${enrollment.classId}::${enrollment.section}`;
+    const used = index.get(key) || new Set<string>();
+    if (enrollment.rollNumber) {
+      used.add(enrollment.rollNumber);
+    }
+    index.set(key, used);
+  }
+
+  return index;
+}
+
+export function reserveRollNumberInIndex(
+  index: EnrollmentRollIndex,
+  classId: string,
+  section: string,
+  preferredRoll?: string,
+): string {
+  const key = `${classId}::${section}`;
+  const used = index.get(key) || new Set<string>();
+  const preferred = preferredRoll?.trim();
+
+  if (preferred && !used.has(preferred)) {
+    used.add(preferred);
+    index.set(key, used);
+    return preferred;
+  }
+
+  let next = 1;
+  while (used.has(String(next))) {
+    next += 1;
+  }
+  const rollNumber = String(next);
+  used.add(rollNumber);
+  index.set(key, used);
+  return rollNumber;
+}

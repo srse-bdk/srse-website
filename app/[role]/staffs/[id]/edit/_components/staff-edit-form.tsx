@@ -19,6 +19,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Autocomplete } from "@/components/core/autocomplete";
+import { ProfilePhotoField } from "@/components/core/profile-photo-field";
 import { BloodGroupFormField } from "@/components/core/blood-group-form-field";
 import { MultiSelectAutocomplete } from "@/components/core/multi-select-autocomplete";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
-import { staffService, subjectService } from "@/lib/services";
+import { profilePhotoService, staffService, subjectService } from "@/lib/services";
 import type { Class } from "@/lib/types/class.type";
 import type { Subject, SubjectStatus } from "@/lib/types/subject.type";
 import type {
@@ -127,6 +128,10 @@ export function StaffEditForm() {
   const staffId = params.id as string;
 
   const [isSaving, setIsSaving] = useState(false);
+  const [profilePicture, setProfilePicture] = useState<string | undefined>();
+  const [profilePictureFileKey, setProfilePictureFileKey] = useState<
+    string | undefined
+  >();
   const defaultAcademicYear = useMemo(getDefaultAcademicYear, []);
   const [assignedSubjectIds, setAssignedSubjectIds] = useState<string[]>([]);
   const [subjectAssignmentsById, setSubjectAssignmentsById] = useState<
@@ -292,6 +297,9 @@ export function StaffEditForm() {
       staffType: staff.staffType || "teaching",
       status: staff.status || "active",
     });
+
+    setProfilePicture(staff.profilePicture);
+    setProfilePictureFileKey(staff.profilePictureFileKey);
 
     const uniqueSubjectIds = Array.from(
       new Set(
@@ -621,6 +629,22 @@ export function StaffEditForm() {
         subjectAssignments: mergedAssignments,
       });
 
+      const photoChanged =
+        profilePicture !== staff?.profilePicture ||
+        profilePictureFileKey !== staff?.profilePictureFileKey;
+
+      if (photoChanged) {
+        if (!profilePicture) {
+          await profilePhotoService.clearStaffProfilePhoto(staffId);
+        } else if (profilePictureFileKey) {
+          await profilePhotoService.updateStaffProfilePhoto(
+            staffId,
+            profilePicture,
+            profilePictureFileKey,
+          );
+        }
+      }
+
       if (createSubjectResults.length > 0) {
         const failedSubjectTaskCount = createSubjectResults.filter(
           (result) => result.status === "rejected",
@@ -710,6 +734,19 @@ export function StaffEditForm() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <ProfilePhotoField
+                value={profilePicture}
+                fileKey={profilePictureFileKey}
+                onChange={(url, key) => {
+                  setProfilePicture(url);
+                  setProfilePictureFileKey(key);
+                }}
+                title="Profile Picture"
+                description="Upload or adjust the staff photo for ID cards (max 150 KB)."
+                editorTitle="Edit staff photo"
+                fallbackIcon={<UserIcon className="h-16 w-16" />}
+              />
+
               <div className="grid gap-4 md:grid-cols-2">
                 <FormField
                   control={form.control}

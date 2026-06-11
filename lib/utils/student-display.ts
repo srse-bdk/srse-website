@@ -5,7 +5,7 @@ export function abbreviateClassNameForDisplay(className?: string): string {
   if (!value) return "";
 
   const upper = value.toUpperCase();
-  if (upper.includes("NURSERY")) return "NUR";
+  if (upper.includes("NURSERY")) return "NURSERY";
   if (upper === "LKG") return "LKG";
   if (upper === "UKG") return "UKG";
 

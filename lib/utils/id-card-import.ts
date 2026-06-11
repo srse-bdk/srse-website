@@ -15,29 +15,28 @@ import {
   personNamesMatch,
   studentClassSectionMatches,
 } from "@/lib/utils/class-section-match";
-import { ensureUniqueScanId } from "@/lib/utils/scan-id";
 import { parseSpreadsheetToRowObjects } from "@/lib/utils/spreadsheet";
 
 export { STUDENT_ID_CARD_HEADERS, STAFF_ID_CARD_HEADERS };
 
 export interface StudentIdCardRow {
   rowNumber: number;
+  serialNumber: number;
   studentName: string;
   classSection: string;
   contactNum: string;
   altContactNumber: string;
   dateOfBirth?: string;
   bloodGroup?: BloodGroup;
-  scanId: string;
 }
 
 export interface StaffIdCardRow {
   rowNumber: number;
+  serialNumber: number;
   staffName: string;
   role: string;
   contactNumber: string;
   bloodGroup?: BloodGroup;
-  scanId: string;
 }
 
 const BLOOD_GROUPS: BloodGroup[] = [
@@ -49,6 +48,20 @@ const BLOOD_GROUPS: BloodGroup[] = [
   "AB-",
   "O+",
   "O-",
+];
+
+const SERIAL_ALIASES = [
+  "sl no",
+  "sl. no.",
+  "sl no.",
+  "sl. no",
+  "serial",
+  "serial no",
+  "serial number",
+  "s no",
+  "s.no",
+  "sr no",
+  "sr. no",
 ];
 
 const STUDENT_NAME_ALIASES = ["student name", "name", "full name"];
@@ -80,7 +93,6 @@ const ALT_CONTACT_ALIASES = [
 ];
 const DOB_ALIASES = ["dob", "date of birth", "birth date", "birthdate"];
 const BLOOD_GROUP_ALIASES = ["blood group", "bloodgroup", "blood"];
-const SCAN_ID_ALIASES = ["bar code id", "barcode id", "scan id", "scanid"];
 
 function normalizeHeader(header: string): string {
   return header.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -107,6 +119,14 @@ function getRowValue(row: Record<string, string>, aliases: string[]): string {
   return "";
 }
 
+export function parseSerialNumber(raw: string, fallback: number): number {
+  const sanitized = sanitizeImportValue(raw);
+  if (!sanitized) return fallback;
+  const parsed = Number.parseInt(sanitized, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return parsed;
+}
+
 function parseBloodGroup(raw: string): BloodGroup | undefined {
   const sanitized = sanitizeImportValue(raw);
   if (!sanitized) return undefined;
@@ -123,10 +143,6 @@ function normalizePhoneDigits(value: string): string {
 function isValidPhone(value: string): boolean {
   const digits = normalizePhoneDigits(value);
   return /^\d{10,15}$/.test(digits);
-}
-
-function isValidScanId(value: string): boolean {
-  return /^ST[UF]-[A-Z0-9]{4,12}$/i.test(value.trim());
 }
 
 function parseImportDate(raw: string): Date | null {
@@ -212,6 +228,21 @@ function validateStudentIdCardHeaders(
   return errors;
 }
 
+function validateStaffIdCardHeaders(rows: Record<string, string>[]): string[] {
+  if (rows.length === 0) {
+    return ["File has no data rows"];
+  }
+
+  const firstRow = rows[0];
+  const errors: string[] = [];
+
+  if (!hasRecognizedHeader(firstRow, ["staff name", "name"])) {
+    errors.push('Missing required column: "Staff Name"');
+  }
+
+  return errors;
+}
+
 export function parseStudentIdCardFile(
   fileName: string,
   content: string | ArrayBuffer,
@@ -229,6 +260,11 @@ export function parseStudentIdCardFile(
 
   rawRows.forEach((row, index) => {
     const rowNumber = index + 2;
+    const defaultSerial = index + 1;
+    const serialNumber = parseSerialNumber(
+      getRowValue(row, SERIAL_ALIASES),
+      defaultSerial,
+    );
     const studentName = sanitizeImportValue(
       getRowValue(row, STUDENT_NAME_ALIASES),
     );
@@ -241,13 +277,14 @@ export function parseStudentIdCardFile(
     const altContactNumber = sanitizeImportValue(altContactRaw);
     const dobRaw = getRowValue(row, DOB_ALIASES);
     const bloodGroupRaw = getRowValue(row, BLOOD_GROUP_ALIASES);
-    const scanIdRaw = getRowValue(row, SCAN_ID_ALIASES);
-    const scanId = sanitizeImportValue(scanIdRaw);
 
-    if (!studentName && !scanId) {
-      rowErrors.push(
-        `Row ${rowNumber}: Student Name or Bar Code ID is required`,
-      );
+    if (!studentName) {
+      rowErrors.push(`Row ${rowNumber}: Student Name is required`);
+      return;
+    }
+
+    if (!classSection) {
+      rowErrors.push(`Row ${rowNumber}: Class-Section is required`);
       return;
     }
 
@@ -291,32 +328,23 @@ export function parseStudentIdCardFile(
       return;
     }
 
-    if (scanId && !isValidScanId(scanId)) {
+    const { currentClass } = parseCombinedClassSection(classSection);
+    if (!currentClass) {
       rowErrors.push(
-        `Row ${rowNumber}: Invalid Bar Code ID "${scanId}" (expected STU-XXXXXXXX)`,
+        `Row ${rowNumber}: Invalid Class-Section "${classSection}"`,
       );
       return;
     }
 
-    if (classSection) {
-      const { currentClass } = parseCombinedClassSection(classSection);
-      if (!currentClass) {
-        rowErrors.push(
-          `Row ${rowNumber}: Invalid Class-Section "${classSection}"`,
-        );
-        return;
-      }
-    }
-
     parsed.push({
       rowNumber,
+      serialNumber,
       studentName,
       classSection,
       contactNum,
       altContactNumber,
       dateOfBirth: parsedDob?.toISOString(),
       bloodGroup,
-      scanId,
     });
   });
 
@@ -336,10 +364,19 @@ export function parseStaffIdCardFile(
 } {
   const { rows: rawRows, errors } = parseSpreadsheetToRowObjects(fileName, content);
   const parsed: StaffIdCardRow[] = [];
-  const rowErrors = [...errors];
+  const rowErrors = [...errors, ...validateStaffIdCardHeaders(rawRows)];
+
+  if (rowErrors.length > 0) {
+    return { rows: [], errors: rowErrors };
+  }
 
   rawRows.forEach((row, index) => {
     const rowNumber = index + 2;
+    const defaultSerial = index + 1;
+    const serialNumber = parseSerialNumber(
+      getRowValue(row, SERIAL_ALIASES),
+      defaultSerial,
+    );
     const staffName = sanitizeImportValue(
       getRowValue(row, ["staff name", "name"]),
     );
@@ -349,12 +386,9 @@ export function parseStaffIdCardFile(
     const contactNumberRaw = getRowValue(row, ["contact number", "phone", "mobile"]);
     const contactNumber = sanitizeImportValue(contactNumberRaw);
     const bloodGroupRaw = getRowValue(row, ["blood group", "bloodgroup"]);
-    const scanId = sanitizeImportValue(
-      getRowValue(row, SCAN_ID_ALIASES),
-    );
 
-    if (!staffName && !scanId) {
-      rowErrors.push(`Row ${rowNumber}: Staff Name or Bar Code ID is required`);
+    if (!staffName) {
+      rowErrors.push(`Row ${rowNumber}: Staff Name is required`);
       return;
     }
 
@@ -371,20 +405,13 @@ export function parseStaffIdCardFile(
       return;
     }
 
-    if (scanId && !isValidScanId(scanId)) {
-      rowErrors.push(
-        `Row ${rowNumber}: Invalid Bar Code ID "${scanId}" (expected STF-XXXXXXXX)`,
-      );
-      return;
-    }
-
     parsed.push({
       rowNumber,
+      serialNumber,
       staffName,
       role,
       contactNumber,
       bloodGroup,
-      scanId,
     });
   });
 
@@ -414,15 +441,6 @@ export function findStudentForIdCardRow(
   students: Student[],
   row: StudentIdCardRow,
 ): Student | undefined {
-  const scanId = row.scanId.trim();
-  if (scanId) {
-    const byScanId = students.find(
-      (student) =>
-        String(student.scanId || "").toUpperCase() === scanId.toUpperCase(),
-    );
-    if (byScanId) return byScanId;
-  }
-
   const targetName = normalizePersonName(row.studentName);
   if (!targetName) return undefined;
 
@@ -464,15 +482,6 @@ export function findStaffForIdCardRow(
   staffs: User[],
   row: StaffIdCardRow,
 ): User | undefined {
-  const scanId = row.scanId.trim();
-  if (scanId) {
-    const byScanId = staffs.find(
-      (staff) =>
-        String(staff.scanId || "").toUpperCase() === scanId.toUpperCase(),
-    );
-    if (byScanId) return byScanId;
-  }
-
   const targetName = normalizePersonName(row.staffName);
   if (!targetName) return undefined;
 
@@ -481,6 +490,17 @@ export function findStaffForIdCardRow(
   );
 
   if (matches.length === 1) return matches[0];
+
+  if (matches.length > 1 && row.role.trim()) {
+    const roleMatches = matches.filter(
+      (staff) =>
+        (staff.position || "").trim().toLowerCase() ===
+          row.role.trim().toLowerCase() ||
+        (staff.staffType === "teaching" && row.role.toLowerCase() === "teacher"),
+    );
+    if (roleMatches.length === 1) return roleMatches[0];
+  }
+
   return undefined;
 }
 
@@ -555,14 +575,6 @@ export async function buildStudentIdCardUpdate(
   );
   if (guardians) update.guardians = guardians;
 
-  if (row.scanId.trim()) {
-    const current = String(student.scanId || "").toUpperCase();
-    const next = row.scanId.trim().toUpperCase();
-    if (current !== next) {
-      update.scanId = await ensureUniqueScanId(next);
-    }
-  }
-
   return update;
 }
 
@@ -576,13 +588,25 @@ export async function buildStaffIdCardUpdate(
   if (row.contactNumber.trim()) update.phoneNumber = row.contactNumber.trim();
   if (row.bloodGroup) update.bloodGroup = row.bloodGroup;
 
-  if (row.scanId.trim()) {
-    const current = String(staff.scanId || "").toUpperCase();
-    const next = row.scanId.trim().toUpperCase();
-    if (current !== next) {
-      update.scanId = await ensureUniqueScanId(next);
-    }
-  }
-
   return update;
+}
+
+export function buildStudentSerialMap(
+  rows: StudentIdCardRow[],
+): Map<number, StudentIdCardRow> {
+  const map = new Map<number, StudentIdCardRow>();
+  for (const row of rows) {
+    map.set(row.serialNumber, row);
+  }
+  return map;
+}
+
+export function buildStaffSerialMap(
+  rows: StaffIdCardRow[],
+): Map<number, StaffIdCardRow> {
+  const map = new Map<number, StaffIdCardRow>();
+  for (const row of rows) {
+    map.set(row.serialNumber, row);
+  }
+  return map;
 }

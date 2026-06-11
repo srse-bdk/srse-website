@@ -27,6 +27,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Autocomplete } from "@/components/core/autocomplete";
+import { ProfilePhotoField } from "@/components/core/profile-photo-field";
 import { BloodGroupFormField } from "@/components/core/blood-group-form-field";
 import { MultiSelectAutocomplete } from "@/components/core/multi-select-autocomplete";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -49,7 +50,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
-import { staffService, subjectService } from "@/lib/services";
+import { profilePhotoService, staffService, subjectService } from "@/lib/services";
 import type { Class } from "@/lib/types/class.type";
 import type { Subject, SubjectStatus } from "@/lib/types/subject.type";
 import type { StaffSubjectAssignment, User } from "@/lib/types/user.type";
@@ -151,6 +152,10 @@ export function StaffForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [profilePicture, setProfilePicture] = useState<string | undefined>();
+  const [profilePictureFileKey, setProfilePictureFileKey] = useState<
+    string | undefined
+  >();
   const defaultAcademicYear = useMemo(getDefaultAcademicYear, []);
   const [assignedSubjectIds, setAssignedSubjectIds] = useState<string[]>([]);
   const [subjectAssignmentsById, setSubjectAssignmentsById] = useState<
@@ -491,6 +496,14 @@ export function StaffForm() {
         subjectAssignments: existingAssignments,
       });
 
+      if (profilePicture && profilePictureFileKey) {
+        await profilePhotoService.updateStaffProfilePhoto(
+          userId,
+          profilePicture,
+          profilePictureFileKey,
+        );
+      }
+
       const createSubjectResults = await Promise.allSettled(
         newSubjects.map((subject) =>
           subjectService.create({
@@ -645,6 +658,20 @@ export function StaffForm() {
                 title="Personal Information"
                 description="Core identity and contact details."
               />
+
+              <ProfilePhotoField
+                value={profilePicture}
+                fileKey={profilePictureFileKey}
+                onChange={(url, key) => {
+                  setProfilePicture(url);
+                  setProfilePictureFileKey(key);
+                }}
+                title="Profile Picture (Optional)"
+                description="Upload a profile picture for ID cards (max 150 KB)."
+                editorTitle="Edit staff photo"
+                fallbackIcon={<UserIcon className="h-16 w-16" />}
+              />
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                 <FormField
                   control={form.control}

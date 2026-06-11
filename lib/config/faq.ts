@@ -40,7 +40,7 @@ export const faqItems: FaqItem[] = [
     id: "4",
     question: "What are the school timings?",
     answer:
-      "Please contact us directly at 9437258670, 9438465475, or 9437530949, or email us at srschoolofexcellence@gmail.com for detailed information about school timings and academic schedule.",
+      "Please contact us directly at 9438465475 or 9437530949, or email us at srschoolofexcellence@gmail.com for detailed information about school timings and academic schedule.",
     category: "general",
   },
   {
@@ -61,7 +61,7 @@ export const faqItems: FaqItem[] = [
     id: "7",
     question: "How can I contact the school?",
     answer:
-      "You can reach us at: Mobile - 9437258670, 9438465475, 9437530949; Landline - 06784-241271; Email - srschoolofexcellence@gmail.com. Our address is Acharya Nagar, Near Omkareshwar Temple, Banta Square (Opposite to RWSS / PWD Office), Bhadrak-756100.",
+      "You can reach us at: Mobile - 9438465475, 9437530949; Landline - 06784-241271; Email - srschoolofexcellence@gmail.com. Our address is Acharya Nagar, Near Omkareshwar Temple, Banta Square (Opposite to RWSS / PWD Office), Bhadrak-756100.",
     category: "support",
   },
   {

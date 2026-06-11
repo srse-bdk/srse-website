@@ -1,9 +1,19 @@
 "use client";
 
-import { CreditCard, Download, GraduationCap, Upload, Users2Icon } from "lucide-react";
+import Link from "next/link";
+import {
+  CreditCard,
+  Download,
+  GraduationCap,
+  Printer,
+  Upload,
+  Image as ImageIcon,
+  Users2Icon,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ImportIdCardDialog } from "@/app/[role]/id-cards/_components/import-id-card-dialog";
+import { UploadProfilePhotosDialog } from "@/app/[role]/id-cards/_components/upload-profile-photos-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,6 +36,8 @@ export default function IdCardDataPage() {
   const [isExportingStaff, setIsExportingStaff] = useState(false);
   const [studentImportOpen, setStudentImportOpen] = useState(false);
   const [staffImportOpen, setStaffImportOpen] = useState(false);
+  const [studentPhotoUploadOpen, setStudentPhotoUploadOpen] = useState(false);
+  const [staffPhotoUploadOpen, setStaffPhotoUploadOpen] = useState(false);
 
   const {
     data: studentsData,
@@ -138,8 +150,12 @@ export default function IdCardDataPage() {
             </CardTitle>
             <CardDescription>
               {activeStudents.length} active student(s). Export is sorted by
-              class, section, roll number. Columns: Student Name, Class-Section,
-              Contact Num, Alt. Contact Num, DoB, Blood Group, Bar Code ID.
+              class, section, roll number. Columns include Sl. No., name,
+              class-section, contacts, DoB, and blood group. Name photos{" "}
+              <span className="font-mono">1.jpg</span>,{" "}
+              <span className="font-mono">2.jpg</span>… to match Sl. No., then
+              upload Excel + photos (max 150 KB each). Bulk print supports
+              photo-only, phased printing, and per-run exclusions.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
@@ -156,6 +172,19 @@ export default function IdCardDataPage() {
               <Upload className="mr-2 h-4 w-4" />
               Import Excel
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setStudentPhotoUploadOpen(true)}
+            >
+              <ImageIcon className="mr-2 h-4 w-4" />
+              Upload Photos
+            </Button>
+            <Button variant="secondary" asChild>
+              <Link href="print">
+                <Printer className="mr-2 h-4 w-4" />
+                Print ID Cards
+              </Link>
+            </Button>
           </CardContent>
         </Card>
 
@@ -166,8 +195,10 @@ export default function IdCardDataPage() {
               Staff ID Cards
             </CardTitle>
             <CardDescription>
-              {activeStaff.length} active staff member(s). Columns: Staff Name,
-              Role, Contact Number, Blood Group, Bar Code ID.
+              {activeStaff.length} active staff member(s). Export is sorted by
+              name. Columns include Sl. No., name, role, contact, and blood
+              group. Name photos by Sl. No., then upload Excel + photos (max 150
+              KB each) for ID cards and staff login.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
@@ -184,6 +215,19 @@ export default function IdCardDataPage() {
               <Upload className="mr-2 h-4 w-4" />
               Import Excel
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setStaffPhotoUploadOpen(true)}
+            >
+              <ImageIcon className="mr-2 h-4 w-4" />
+              Upload Photos
+            </Button>
+            <Button variant="secondary" asChild>
+              <Link href="print">
+                <Printer className="mr-2 h-4 w-4" />
+                Print ID Cards
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -197,6 +241,16 @@ export default function IdCardDataPage() {
         kind="staff"
         open={staffImportOpen}
         onOpenChange={setStaffImportOpen}
+      />
+      <UploadProfilePhotosDialog
+        kind="student"
+        open={studentPhotoUploadOpen}
+        onOpenChange={setStudentPhotoUploadOpen}
+      />
+      <UploadProfilePhotosDialog
+        kind="staff"
+        open={staffPhotoUploadOpen}
+        onOpenChange={setStaffPhotoUploadOpen}
       />
     </div>
   );

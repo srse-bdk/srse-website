@@ -1,22 +1,30 @@
 "use client";
 
-import { BrowserMultiFormatReader } from "@zxing/browser";
-import { NotFoundException } from "@zxing/library";
+import { BrowserQRCodeReader } from "@zxing/browser";
+import { DecodeHintType, NotFoundException } from "@zxing/library";
 import { Camera, CameraOff, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-interface BarcodeScannerProps {
+interface QrCodeScannerProps {
   onDetected: (value: string) => void;
   className?: string;
 }
 
-export function BarcodeScanner({ onDetected, className }: BarcodeScannerProps) {
+function createQrReader() {
+  const hints = new Map();
+  hints.set(DecodeHintType.TRY_HARDER, true);
+  return new BrowserQRCodeReader(hints);
+}
+
+export function QrCodeScanner({ onDetected, className }: QrCodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
-  const scannerRef = useRef<BrowserMultiFormatReader | null>(null);
-  const lastDetectedRef = useRef<{ value: string; timestamp: number } | null>(null);
+  const scannerRef = useRef<BrowserQRCodeReader | null>(null);
+  const lastDetectedRef = useRef<{ value: string; timestamp: number } | null>(
+    null,
+  );
 
   const [isStarting, setIsStarting] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -36,7 +44,7 @@ export function BarcodeScanner({ onDetected, className }: BarcodeScannerProps) {
     setError(null);
 
     try {
-      const scanner = new BrowserMultiFormatReader();
+      const scanner = createQrReader();
       scannerRef.current = scanner;
 
       const controls = await scanner.decodeFromVideoDevice(
@@ -44,7 +52,7 @@ export function BarcodeScanner({ onDetected, className }: BarcodeScannerProps) {
         videoRef.current,
         (result, decodeError) => {
           if (decodeError && !(decodeError instanceof NotFoundException)) {
-            console.error("Scanner decode error:", decodeError);
+            console.error("QR scanner decode error:", decodeError);
             return;
           }
 
@@ -54,7 +62,6 @@ export function BarcodeScanner({ onDetected, className }: BarcodeScannerProps) {
           const now = Date.now();
           const last = lastDetectedRef.current;
 
-          // Prevent rapid duplicate triggers from the same card.
           if (last && last.value === value && now - last.timestamp < 1500) {
             return;
           }
@@ -67,7 +74,7 @@ export function BarcodeScanner({ onDetected, className }: BarcodeScannerProps) {
       controlsRef.current = controls;
       setIsRunning(true);
     } catch (startError) {
-      console.error("Failed to start scanner:", startError);
+      console.error("Failed to start QR scanner:", startError);
       setError("Camera access failed. Check permission and HTTPS.");
     } finally {
       setIsStarting(false);
@@ -83,7 +90,12 @@ export function BarcodeScanner({ onDetected, className }: BarcodeScannerProps) {
   return (
     <div className={cn("space-y-3", className)}>
       <div className="overflow-hidden rounded-lg border bg-black/90">
-        <video ref={videoRef} className="aspect-video w-full object-cover" muted playsInline />
+        <video
+          ref={videoRef}
+          className="aspect-video w-full object-cover"
+          muted
+          playsInline
+        />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -97,7 +109,7 @@ export function BarcodeScanner({ onDetected, className }: BarcodeScannerProps) {
             ) : (
               <>
                 <Camera className="mr-2 size-4" />
-                Start Scanner
+                Start QR Scanner
               </>
             )}
           </Button>
@@ -109,7 +121,14 @@ export function BarcodeScanner({ onDetected, className }: BarcodeScannerProps) {
         )}
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        Point the camera at the QR code on an ID card.
+      </p>
+
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }
+
+/** @deprecated Use QrCodeScanner — ID cards now use QR codes, not barcodes. */
+export const BarcodeScanner = QrCodeScanner;

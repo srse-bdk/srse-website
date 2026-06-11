@@ -387,6 +387,40 @@ class EnrollmentService {
   }
 
   /**
+   * Remove enrollments whose student record no longer exists.
+   */
+  async deleteOrphanedEnrollments(validStudentIds: Set<string>): Promise<number> {
+    const enrollments = await this.getAll();
+    let deletedCount = 0;
+
+    for (const enrollment of enrollments) {
+      if (validStudentIds.has(enrollment.studentId)) continue;
+      await mutate({
+        action: "delete",
+        path: `enrollments/${enrollment.id}`,
+        actionBy: "admin",
+      });
+      deletedCount += 1;
+    }
+
+    return deletedCount;
+  }
+
+  /**
+   * Delete all enrollments for a student (used when removing the student).
+   */
+  async deleteByStudentId(studentId: string): Promise<void> {
+    const enrollments = await this.getByStudentId(studentId);
+    for (const enrollment of enrollments) {
+      await mutate({
+        action: "delete",
+        path: `enrollments/${enrollment.id}`,
+        actionBy: "admin",
+      });
+    }
+  }
+
+  /**
    * Delete enrollment (hard delete)
    */
   async delete(id: string): Promise<void> {

@@ -56,10 +56,7 @@ export function CommandPalette({
     router.push(`/${role}${url}`);
   };
 
-  const allItems = [
-    ...navigationItems.filter((item) => item.roles.includes(role)),
-    ...settingsItems,
-  ];
+  const allItems = [...navigationItems, ...settingsItems];
 
   return (
     <>

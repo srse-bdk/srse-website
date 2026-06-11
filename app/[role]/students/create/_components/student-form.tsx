@@ -15,7 +15,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { ImageEditor } from "@/components/ui/image-editor";
+import { ProfilePhotoField } from "@/components/core/profile-photo-field";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -36,11 +36,11 @@ import type {
   Student,
   StudentDocument,
   StudentInput,
+  StudentUpdateInput,
 } from "@/lib/types/student.type";
 import { useUploadThing } from "@/lib/utils/uploadthing";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Camera,
   Check,
   CheckCircle,
   ChevronLeft,
@@ -198,19 +198,201 @@ const stepVariants = {
   }),
 };
 
-export function StudentForm() {
+interface StudentFormProps {
+  student?: Student;
+}
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: "", lastName: "" };
+  }
+  return {
+    firstName: parts[0] || "",
+    lastName: parts.slice(1).join(" "),
+  };
+}
+
+function studentToFormDefaults(student: Student): StudentFormData {
+  const nameFromFull =
+    !student.firstName && !student.lastName && student.fullName
+      ? splitFullName(student.fullName)
+      : null;
+
+  return {
+    admissionNumber: student.admissionNumber || "",
+    admissionDate: student.admissionDate || "",
+    firstName: student.firstName || nameFromFull?.firstName || "",
+    lastName: student.lastName || nameFromFull?.lastName || "",
+    dateOfBirth: student.dateOfBirth || "",
+    gender: student.gender,
+    bloodGroup: student.bloodGroup,
+    email: student.email || "",
+    phone: student.phone || "",
+    alternatePhone: student.alternatePhone || "",
+    address: {
+      street: student.address?.street || "",
+      city: student.address?.city || "",
+      state: student.address?.state || "",
+      pincode: student.address?.pincode || "",
+      country: student.address?.country || "India",
+    },
+    guardians: student.guardians || [],
+    profilePicture: student.profilePicture || "",
+    profilePictureFileKey: student.profilePictureFileKey || "",
+    documents: student.documents || [],
+    optionalFeeIds: student.optionalFeeIds || [],
+    optionalFeeAmounts: student.optionalFeeAmounts || {},
+    socialCategory: student.socialCategory || "",
+    minorityGroup: "",
+    bplBeneficiary: "",
+    aayBeneficiary: "",
+    ewsDisadvantaged: "",
+    cwsn: "",
+    impairmentType: "",
+    disabilityPercentage: "",
+    disabilityCertificate: "",
+    nationality: "Indian",
+    outOfSchool: "",
+    mainstreamedYear: "",
+    motherTongue: "",
+    pen: student.pen || "",
+    aadharNumber: "",
+    nameOnAadhar: "",
+    currentClass: student.currentClass || "",
+    currentSection: student.currentSection || "",
+    rollNumber: student.rollNumber || "",
+    mediumOfInstruction: "",
+    rteAct: "",
+    rteEntitlement: "",
+    previousClass: "",
+    previousClassResult: "",
+    academicStream: "",
+    subjectsGroup: "",
+    previousMarks: "",
+    previousStatus: "",
+    attendanceDays: "",
+    previousGrade: "",
+    facilities: "",
+    cwsnFacilities: "",
+    sldScreened: "",
+    sldType: "",
+    asdScreened: "",
+    adhdScreened: "",
+    gifted: "",
+    stateCompetitions: "",
+    nccNss: "",
+    digitalDevice: "",
+    height: "",
+    weight: "",
+    distance: "",
+    siblingIds: student.siblingIds || [],
+  };
+}
+
+function buildStudentPayloadFromForm(
+  data: StudentFormData,
+  userId: string | undefined,
+  options: { isEdit: boolean },
+): StudentInput | StudentUpdateInput {
+  const documents =
+    data.documents
+      ?.filter((d) => d.url && d.label)
+      .map((d) => {
+        if (!d.url || !d.fileKey) return null;
+        return {
+          id: d.id,
+          label: d.label,
+          url: d.url,
+          fileKey: d.fileKey,
+          uploadedAt: d.uploadedAt || new Date().toISOString(),
+          uploadedBy: d.uploadedBy || userId || "admin",
+        };
+      })
+      .filter((d): d is StudentDocument => d !== null) || [];
+
+  const payload = {
+    ...(data.admissionDate && { admissionDate: data.admissionDate }),
+    firstName: data.firstName,
+    lastName: data.lastName,
+    ...(data.dateOfBirth && { dateOfBirth: data.dateOfBirth }),
+    ...(data.gender && { gender: data.gender }),
+    ...(data.bloodGroup && { bloodGroup: data.bloodGroup }),
+    ...(data.email && { email: data.email }),
+    ...(data.phone && { phone: data.phone }),
+    ...(data.alternatePhone && { alternatePhone: data.alternatePhone }),
+    address: data.address
+      ? {
+          street: data.address.street || "",
+          city: data.address.city || "",
+          state: data.address.state || "",
+          pincode: data.address.pincode || "",
+          country: data.address.country || "India",
+        }
+      : {
+          street: "",
+          city: "",
+          state: "",
+          pincode: "",
+          country: "India",
+        },
+    guardians:
+      data.guardians?.map((g) => ({
+        id: g.id,
+        relationship: (g.relationship || "father") as
+          | "father"
+          | "mother"
+          | "guardian"
+          | "other",
+        name: g.name || "",
+        email: g.email,
+        phone: g.phone || "",
+        occupation: g.occupation,
+        address: g.address,
+        isPrimary: g.isPrimary,
+      })) || [],
+    ...(data.profilePicture && { profilePicture: data.profilePicture }),
+    ...(data.profilePictureFileKey && {
+      profilePictureFileKey: data.profilePictureFileKey,
+    }),
+    ...(data.currentClass && { currentClass: data.currentClass }),
+    ...(data.currentSection && { currentSection: data.currentSection }),
+    ...(data.rollNumber && { rollNumber: data.rollNumber }),
+    ...(data.siblingIds && { siblingIds: data.siblingIds }),
+    ...(data.optionalFeeIds && { optionalFeeIds: data.optionalFeeIds }),
+    ...(data.optionalFeeAmounts && {
+      optionalFeeAmounts: data.optionalFeeAmounts,
+    }),
+    ...(data.pen && { pen: data.pen }),
+    ...(data.socialCategory && { socialCategory: data.socialCategory }),
+    documents,
+  };
+
+  if (options.isEdit) {
+    return {
+      ...payload,
+      ...(data.admissionNumber && { admissionNumber: data.admissionNumber }),
+    } satisfies StudentUpdateInput;
+  }
+
+  return {
+    admissionNumber: data.admissionNumber || `ADM-${Date.now()}`,
+    ...payload,
+  } satisfies StudentInput;
+}
+
+export function StudentForm({ student }: StudentFormProps = {}) {
   const router = useRouter();
   const params = useParams();
   const role = params.role as string;
+  const isEditMode = Boolean(student);
+  const editStudentId =
+    student?.id || (isEditMode ? (params.id as string | undefined) : undefined);
   const { user } = useAppStore();
   const [currentStep, setCurrentStep] = useState<StepId>("basic");
   const [direction, setDirection] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [showImageEditor, setShowImageEditor] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const documentInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [siblingSearchQuery, setSiblingSearchQuery] = useState("");
@@ -254,7 +436,9 @@ export function StudentForm() {
 
   const form = useForm<StudentFormData>({
     resolver: zodResolver(studentSchema),
-    defaultValues: {
+    defaultValues: student
+      ? studentToFormDefaults(student)
+      : {
       admissionNumber: "",
       admissionDate: "",
       firstName: "",
@@ -328,21 +512,27 @@ export function StudentForm() {
     },
   });
 
-  const { startUpload, isUploading } = useUploadThing("imageUploader", {
-    onClientUploadComplete: async (res) => {
-      if (res?.[0]?.url && res?.[0]?.key) {
-        const profilePictureUrl = res[0].url;
-        const fileKey = res[0].key;
-        form.setValue("profilePicture", profilePictureUrl);
-        form.setValue("profilePictureFileKey", fileKey);
-        setImagePreview(profilePictureUrl);
-        toast.success("Profile picture uploaded!");
+  useEffect(() => {
+    if (!student) return;
+    form.reset(studentToFormDefaults(student));
+    setHasSiblings((student.siblingIds?.length || 0) > 0);
+  }, [student?.id, student?.updatedAt, student, form]);
+
+  useEffect(() => {
+    const loadStudents = async () => {
+      try {
+        const students = await studentService.getAll();
+        setAllStudents(
+          editStudentId
+            ? students.filter((item) => item.id !== editStudentId)
+            : students,
+        );
+      } catch (error) {
+        console.error("Error loading students:", error);
       }
-    },
-    onUploadError: (error: Error) => {
-      toast.error(`Upload failed: ${error.message}`);
-    },
-  });
+    };
+    loadStudents();
+  }, [editStudentId]);
 
   const { startUpload: startDocumentUpload, isUploading: isDocumentUploading } =
     useUploadThing("generalUploader", {
@@ -388,38 +578,6 @@ export function StudentForm() {
     if (currentStepIndex > 0) {
       setDirection(-1);
       setCurrentStep(STEPS[currentStepIndex - 1].id);
-    }
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file");
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Image size must be less than 10MB");
-      return;
-    }
-
-    setSelectedFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-    setShowImageEditor(true);
-  };
-
-  const handleImageEditorSave = async (optimizedFile: File) => {
-    setShowImageEditor(false);
-    try {
-      await startUpload([optimizedFile]);
-    } catch (error) {
-      console.error("Error uploading image:", error);
     }
   };
 
@@ -524,84 +682,30 @@ export function StudentForm() {
         const existing = await studentService.getByAdmissionNumber(
           data.admissionNumber,
         );
-        if (existing) {
+        if (existing && existing.id !== editStudentId) {
           toast.error("Admission number already exists");
           setIsLoading(false);
           return;
         }
       }
 
-      const admissionNumber = data.admissionNumber || `ADM-${Date.now()}`;
+      if (isEditMode && editStudentId) {
+        const updateData = buildStudentPayloadFromForm(data, user?.uid, {
+          isEdit: true,
+        }) as StudentUpdateInput;
+        await studentService.update(editStudentId, updateData);
+        toast.success("Student updated successfully");
+        setShowSuccess(true);
+        setTimeout(() => {
+          setShowSuccess(false);
+          router.push(`/${role}/students/${editStudentId}`);
+        }, 2000);
+        return;
+      }
 
-      const studentData: StudentInput = {
-        admissionNumber,
-        ...(data.admissionDate && { admissionDate: data.admissionDate }),
-        firstName: data.firstName,
-        lastName: data.lastName,
-        ...(data.dateOfBirth && { dateOfBirth: data.dateOfBirth }),
-        ...(data.gender && { gender: data.gender }),
-        ...(data.bloodGroup && { bloodGroup: data.bloodGroup }),
-        ...(data.email && { email: data.email }),
-        ...(data.phone && { phone: data.phone }),
-        ...(data.alternatePhone && { alternatePhone: data.alternatePhone }),
-        address: data.address
-          ? {
-              street: data.address.street || "",
-              city: data.address.city || "",
-              state: data.address.state || "",
-              pincode: data.address.pincode || "",
-              country: data.address.country || "India",
-            }
-          : {
-              street: "",
-              city: "",
-              state: "",
-              pincode: "",
-              country: "India",
-            },
-        guardians:
-          data.guardians?.map((g) => ({
-            id: g.id,
-            relationship: (g.relationship || "father") as
-              | "father"
-              | "mother"
-              | "guardian"
-              | "other",
-            name: g.name || "",
-            email: g.email,
-            phone: g.phone || "",
-            occupation: g.occupation,
-            address: g.address,
-            isPrimary: g.isPrimary,
-          })) || [],
-        ...(data.profilePicture && { profilePicture: data.profilePicture }),
-        ...(data.profilePictureFileKey && {
-          profilePictureFileKey: data.profilePictureFileKey,
-        }),
-        ...(data.currentClass && { currentClass: data.currentClass }),
-        ...(data.currentSection && { currentSection: data.currentSection }),
-        ...(data.rollNumber && { rollNumber: data.rollNumber }),
-        ...(data.siblingIds && { siblingIds: data.siblingIds }),
-        ...(data.optionalFeeIds && { optionalFeeIds: data.optionalFeeIds }),
-        ...(data.optionalFeeAmounts && {
-          optionalFeeAmounts: data.optionalFeeAmounts,
-        }),
-        documents:
-          data.documents
-            ?.filter((d) => d.url && d.label)
-            .map((d) => {
-              if (!d.url || !d.fileKey) return null;
-              return {
-                id: d.id,
-                label: d.label,
-                url: d.url,
-                fileKey: d.fileKey,
-                uploadedAt: d.uploadedAt || new Date().toISOString(),
-                uploadedBy: d.uploadedBy || user?.uid || "admin",
-              };
-            })
-            .filter((d): d is StudentDocument => d !== null) || [],
-      };
+      const studentData = buildStudentPayloadFromForm(data, user?.uid, {
+        isEdit: false,
+      }) as StudentInput;
 
       await studentService.create(studentData);
       setShowSuccess(true);
@@ -610,11 +714,16 @@ export function StudentForm() {
         router.push(`/${role}/students`);
       }, 3000);
     } catch (error) {
-      console.error("Error creating student:", error);
+      console.error(
+        isEditMode ? "Error updating student:" : "Error creating student:",
+        error,
+      );
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to create student. Please try again.",
+          : isEditMode
+            ? "Failed to update student. Please try again."
+            : "Failed to create student. Please try again.",
       );
     } finally {
       setIsLoading(false);
@@ -2151,60 +2260,18 @@ export function StudentForm() {
         const watchedDocuments = form.watch("documents") || [];
         return (
           <div className="space-y-6">
-            {/* Profile Picture Section */}
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-lg font-semibold mb-2">
-                  Profile Picture (Optional)
-                </h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Upload a profile picture for the student.
-                </p>
-              </div>
-              <div className="flex flex-col items-center gap-4">
-                <Avatar className="h-32 w-32">
-                  <AvatarImage src={imagePreview || undefined} />
-                  <AvatarFallback>
-                    <GraduationCap className="h-16 w-16" />
-                  </AvatarFallback>
-                </Avatar>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                  >
-                    <Camera className="h-4 w-4 mr-2" />
-                    {imagePreview ? "Change Photo" : "Upload Photo"}
-                  </Button>
-                  {imagePreview && (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      onClick={() => {
-                        setImagePreview(null);
-                        form.setValue("profilePicture", "");
-                        form.setValue("profilePictureFileKey", "");
-                      }}
-                    >
-                      <X className="h-4 w-4 mr-2" />
-                      Remove
-                    </Button>
-                  )}
-                </div>
-                {isUploading && (
-                  <p className="text-sm text-muted-foreground">Uploading...</p>
-                )}
-              </div>
-            </div>
+            <ProfilePhotoField
+              value={form.watch("profilePicture")}
+              fileKey={form.watch("profilePictureFileKey")}
+              onChange={(url, key) => {
+                form.setValue("profilePicture", url || "");
+                form.setValue("profilePictureFileKey", key || "");
+              }}
+              title="Profile Picture (Optional)"
+              description="Upload a profile picture for the student (max 150 KB). Used on ID cards and linked parent login."
+              editorTitle="Edit student photo"
+              fallbackIcon={<GraduationCap className="h-16 w-16" />}
+            />
 
             {/* Documents Section */}
             <div className="space-y-4">
@@ -2328,10 +2395,17 @@ export function StudentForm() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Create Student</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          {isEditMode ? "Edit Student" : "Create Student"}
+        </h1>
         <p className="text-muted-foreground">
-          Add a new student. Only name is required - other information can be
-          added later.
+          {isEditMode
+            ? `Update details for ${student?.fullName || "this student"}${
+                student?.admissionNumber
+                  ? ` (Admission No: ${student.admissionNumber})`
+                  : ""
+              }.`
+            : "Add a new student. Only name is required - other information can be added later."}
         </p>
       </div>
 
@@ -2386,7 +2460,9 @@ export function StudentForm() {
             <Alert className="border-green-200 bg-green-50 text-green-800">
               <CheckCircle className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-800">
-                Student created successfully! Redirecting to students list...
+                {isEditMode
+                  ? "Student updated successfully! Redirecting to profile..."
+                  : "Student created successfully! Redirecting to students list..."}
               </AlertDescription>
             </Alert>
           )}
@@ -2442,13 +2518,25 @@ export function StudentForm() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => router.push(`/${role}/students`)}
+                  onClick={() =>
+                    router.push(
+                      isEditMode && editStudentId
+                        ? `/${role}/students/${editStudentId}`
+                        : `/${role}/students`,
+                    )
+                  }
                   disabled={isLoading}
                 >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isLoading}>
-                  {isLoading ? "Creating..." : "Create Student"}
+                  {isLoading
+                    ? isEditMode
+                      ? "Saving..."
+                      : "Creating..."
+                    : isEditMode
+                      ? "Save Changes"
+                      : "Create Student"}
                 </Button>
               </div>
             )}
@@ -2456,17 +2544,6 @@ export function StudentForm() {
         </form>
       </Form>
 
-      {selectedFile && (
-        <ImageEditor
-          imageFile={selectedFile}
-          open={showImageEditor}
-          onSave={handleImageEditorSave}
-          onCancel={() => {
-            setShowImageEditor(false);
-            setSelectedFile(null);
-          }}
-        />
-      )}
     </div>
   );
 }

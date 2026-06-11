@@ -74,7 +74,7 @@ export function useFirebaseRealtime<T>(
       (snapshot: DataSnapshot) => {
         try {
           if (!snapshot.exists()) {
-            setData(asArray ? [] : {});
+            setData(asArray ? [] : null);
             setLoading(false);
             return;
           }
@@ -83,6 +83,10 @@ export function useFirebaseRealtime<T>(
 
           if (!asArray) {
             processedData = { ...snapshot.val() };
+            const key = snapshot.key;
+            if (key && processedData && typeof processedData === "object" && !processedData.id) {
+              processedData.id = key;
+            }
           } else if (nested) {
             processedData = getArrFromNestedSnap(snapshot);
           } else {

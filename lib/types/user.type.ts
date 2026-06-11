@@ -38,6 +38,8 @@ export interface User extends BaseEntity {
   socialCategoryCode?: number;
   currentClass?: string;
   currentSection?: string;
+  /** Set when ID card was bulk-printed (phased print tracking). */
+  idCardPrintedAt?: string;
 }
 
 // Input types for user creation
@@ -68,4 +70,5 @@ export interface UserUpdateInput {
   staffType?: "teaching" | "non-teaching";
   phoneNumber?: string;
   subjectAssignments?: StaffSubjectAssignment[];
+  idCardPrintedAt?: string;
 }

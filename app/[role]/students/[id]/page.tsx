@@ -3,6 +3,7 @@
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import type { Student } from "@/lib/types/student.type";
 import type { FeeConfiguration } from "@/lib/types/fee.type";
+import { useAppStore } from "@/hooks/use-app-store";
 import { useParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -26,6 +27,7 @@ import {
   Calendar,
   CreditCard,
   Building2,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -37,6 +39,8 @@ export default function StudentProfilePage() {
   const params = useParams();
   const studentId = params.id as string;
   const role = params.role as string;
+  const user = useAppStore((state) => state.user);
+  const canManageStudent = user?.role === "admin";
 
   const {
     data: studentData,
@@ -50,7 +54,10 @@ export default function StudentProfilePage() {
       asArray: true,
     });
 
-  const student = studentData as Student | null;
+  const rawStudent = studentData as Student | null;
+  const student = rawStudent
+    ? { ...rawStudent, id: rawStudent.id || studentId }
+    : null;
   const allFees = (feesData as FeeConfiguration[]) || [];
 
   if (studentLoading || feesLoading) {
@@ -171,14 +178,26 @@ export default function StudentProfilePage() {
           </div>
         </div>
 
-        <div className="w-full sm:w-auto flex justify-center sm:justify-end">
-          <Button asChild variant="outline" className="gap-2">
-            <Link href={`/${role}/students/${student.id}/edit`}>
-              <Edit className="h-4 w-4" />
-              Edit Profile
-            </Link>
-          </Button>
-        </div>
+        {canManageStudent ? (
+          <div className="flex w-full flex-wrap justify-center gap-2 sm:w-auto sm:justify-end">
+            {student.status === "active" && student.scanId?.trim() ? (
+              <Button asChild variant="secondary" className="gap-2">
+                <Link
+                  href={`/${role}/id-cards/print?studentId=${studentId}`}
+                >
+                  <Printer className="h-4 w-4" />
+                  Print ID Card
+                </Link>
+              </Button>
+            ) : null}
+            <Button asChild variant="outline" className="gap-2">
+              <Link href={`/${role}/students/${studentId}/edit`}>
+                <Edit className="h-4 w-4" />
+                Edit Profile
+              </Link>
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {/* Main Content Tabs */}
@@ -405,7 +424,9 @@ export default function StudentProfilePage() {
                   <CreditCard className="h-5 w-5 text-primary" />
                   Optional Fees
                 </CardTitle>
-                <AddOptionalFeeDialog student={student} />
+                {canManageStudent ? (
+                  <AddOptionalFeeDialog student={student} />
+                ) : null}
               </CardHeader>
               <CardContent className="pt-6">
                 {/* DEBUG SECTION */}

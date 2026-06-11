@@ -4,7 +4,8 @@ import type {
   StudentInput,
   StudentStatus,
 } from "@/lib/types/student.type";
-import { normalizePen } from "@/lib/utils/student-login";
+import { normalizePersonName } from "@/lib/utils/class-section-match";
+import { parsePenFromImport } from "@/lib/utils/student-login";
 import { sanitizeImportValue } from "@/lib/utils/import-values";
 import { sortStudentsByClassSectionRoll } from "@/lib/utils/student-roll-number";
 import * as XLSX from "xlsx";
@@ -46,7 +47,7 @@ const HEADER_ALIASES = {
   status: ["status", "entry status"],
   currentClass: ["class", "class name", "grade", "std", "standard"],
   currentSection: ["section", "sec"],
-  pen: ["student pen", "pen", "student pen number", "student state code"],
+  pen: ["student pen", "pen", "student pen number"],
   fatherName: ["father name", "father"],
   motherName: ["mother name", "mother"],
   socialCategory: ["social category", "category"],
@@ -293,11 +294,7 @@ function parseRowsToStudents(
       sanitizeImportValue(getRowValue(row, HEADER_ALIASES.fullName)) ||
       sanitizeImportValue(getRowValue(row, HEADER_ALIASES.aadhaarName));
     const scanId = sanitizeImportValue(getRowValue(row, HEADER_ALIASES.scanId));
-    const rawPen = getRowValue(row, HEADER_ALIASES.pen);
-    const rawStateCode = getRowValue(row, ["student state code", "state code"]);
-    const pen = normalizePen(
-      sanitizeImportValue(rawPen) || sanitizeImportValue(rawStateCode),
-    );
+    const pen = parsePenFromImport(getRowValue(row, HEADER_ALIASES.pen));
     const admissionFromSheet = sanitizeImportValue(
       getRowValue(row, HEADER_ALIASES.admissionNumber),
     );
@@ -674,4 +671,95 @@ function parseDate(dateString: string): Date | null {
 function isValidEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
+}
+
+export interface StudentImportMatchIndexes {
+  byPen: Map<string, string>;
+  byAdmission: Map<string, string>;
+  byScanId: Map<string, string>;
+  byNameClassSection: Map<string, string>;
+}
+
+function getStudentFullName(student: Partial<StudentInput> | Student): string {
+  if ("fullName" in student && student.fullName?.trim()) {
+    return student.fullName.trim();
+  }
+  return `${student.firstName || ""} ${student.lastName || ""}`.trim();
+}
+
+function getNameClassSectionKey(student: Partial<StudentInput> | Student): string | null {
+  const fullName = getStudentFullName(student);
+  const nameKey = normalizePersonName(fullName);
+  const classKey = normalizeClassName(student.currentClass || "");
+  const sectionKey = normalizeSection(student.currentSection || "");
+  if (!nameKey || !classKey || !sectionKey) return null;
+  return `${nameKey}|${classKey.toLowerCase()}|${sectionKey}`;
+}
+
+export function buildStudentImportMatchIndexes(
+  students: Student[],
+): StudentImportMatchIndexes {
+  const indexes: StudentImportMatchIndexes = {
+    byPen: new Map(),
+    byAdmission: new Map(),
+    byScanId: new Map(),
+    byNameClassSection: new Map(),
+  };
+
+  for (const student of students) {
+    registerStudentInImportIndexes(student.id, student, indexes);
+  }
+
+  return indexes;
+}
+
+export function registerStudentInImportIndexes(
+  studentId: string,
+  student: Partial<StudentInput> | Student,
+  indexes: StudentImportMatchIndexes,
+): void {
+  const penKey = parsePenFromImport(student.pen || "");
+  if (penKey) indexes.byPen.set(penKey, studentId);
+
+  const admissionKey = (student.admissionNumber || "").trim().toLowerCase();
+  if (admissionKey) indexes.byAdmission.set(admissionKey, studentId);
+
+  const scanKey = (student.scanId || "").trim().toUpperCase();
+  if (scanKey) indexes.byScanId.set(scanKey, studentId);
+
+  const nameClassSectionKey = getNameClassSectionKey(student);
+  if (nameClassSectionKey) {
+    indexes.byNameClassSection.set(nameClassSectionKey, studentId);
+  }
+}
+
+export function findExistingStudentIdForImport(
+  student: Partial<StudentInput>,
+  indexes: StudentImportMatchIndexes,
+): string | undefined {
+  const penKey = parsePenFromImport(student.pen || "");
+  if (penKey) {
+    const byPen = indexes.byPen.get(penKey);
+    if (byPen) return byPen;
+  }
+
+  const admissionKey = (student.admissionNumber || "").trim().toLowerCase();
+  if (admissionKey) {
+    const byAdmission = indexes.byAdmission.get(admissionKey);
+    if (byAdmission) return byAdmission;
+  }
+
+  const scanKey = (student.scanId || "").trim().toUpperCase();
+  if (scanKey) {
+    const byScanId = indexes.byScanId.get(scanKey);
+    if (byScanId) return byScanId;
+  }
+
+  const nameClassSectionKey = getNameClassSectionKey(student);
+  if (nameClassSectionKey) {
+    const byNameClassSection = indexes.byNameClassSection.get(nameClassSectionKey);
+    if (byNameClassSection) return byNameClassSection;
+  }
+
+  return undefined;
 }

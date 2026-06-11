@@ -4,21 +4,21 @@ import { sortStudentsByClassSectionRoll } from "@/lib/utils/student-roll-number"
 import { downloadExcelSheet } from "@/lib/utils/spreadsheet";
 
 export const STUDENT_ID_CARD_HEADERS = [
+  "Sl. No.",
   "Student Name",
   "Class-Section",
   "Contact Num",
   "Alt. Contact Num",
   "DoB",
   "Blood Group",
-  "Bar Code ID",
 ] as const;
 
 export const STAFF_ID_CARD_HEADERS = [
+  "Sl. No.",
   "Staff Name",
   "Role",
   "Contact Number",
   "Blood Group",
-  "Bar Code ID",
 ] as const;
 
 function formatClassSection(student: Student): string {
@@ -71,25 +71,33 @@ export function sortStudentsForIdCardExport(students: Student[]): Student[] {
   return sortStudentsByClassSectionRoll(students);
 }
 
+export function sortStaffForIdCardExport(staffs: User[]): User[] {
+  return [...staffs].sort((left, right) =>
+    (left.name || "").localeCompare(right.name || "", undefined, {
+      sensitivity: "base",
+    }),
+  );
+}
+
 export function exportStudentIdCardsToRows(students: Student[]): string[][] {
-  return sortStudentsForIdCardExport(students).map((student) => [
+  return sortStudentsForIdCardExport(students).map((student, index) => [
+    String(index + 1),
     student.fullName || "",
     formatClassSection(student),
     getContactNum(student),
     getAltContactNumber(student),
     formatDoB(student.dateOfBirth),
     student.bloodGroup || "",
-    student.scanId || "",
   ]);
 }
 
 export function exportStaffIdCardsToRows(staffs: User[]): string[][] {
-  return staffs.map((staff) => [
+  return sortStaffForIdCardExport(staffs).map((staff, index) => [
+    String(index + 1),
     staff.name || "",
     formatStaffRole(staff),
     staff.phoneNumber || "",
     staff.bloodGroup || "",
-    staff.scanId || "",
   ]);
 }
 
@@ -118,13 +126,13 @@ export function downloadStudentIdCardTemplateExcel(): void {
     [...STUDENT_ID_CARD_HEADERS],
     [
       [
+        "1",
         "John Doe",
         "I-A",
         "9876543210",
         "9876543211",
         "15/08/2015",
         "B+",
-        "STU-7F2K9Q8M",
       ],
     ],
     "student_id_cards_template.xlsx",
@@ -135,7 +143,7 @@ export function downloadStudentIdCardTemplateExcel(): void {
 export function downloadStaffIdCardTemplateExcel(): void {
   downloadExcelSheet(
     [...STAFF_ID_CARD_HEADERS],
-    [["Jane Smith", "Teacher", "9876501234", "B+", "STF-4D8M1R2K"]],
+    [["1", "Jane Smith", "Teacher", "9876501234", "B+"]],
     "staff_id_cards_template.xlsx",
     "Staff ID Cards",
   );

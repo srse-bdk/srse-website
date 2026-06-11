@@ -24,7 +24,8 @@ export interface PunchControlRef {
 
 export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
   const user = useAppStore((state) => state.user);
-  const [todayRecord, setTodayRecord] = useState<Attendance | null>(null);
+  const [openSession, setOpenSession] = useState<Attendance | null>(null);
+  const [todaySessions, setTodaySessions] = useState<Attendance[]>([]);
   const [loading, setLoading] = useState(true);
   const [punching, setPunching] = useState(false);
   const [locationPermission, setLocationPermission] = useState<
@@ -35,8 +36,12 @@ export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
     if (!user?.uid) return;
 
     try {
-      const record = await attendanceService.getTodayPunchIn(user.uid);
-      setTodayRecord(record);
+      const [open, sessions] = await Promise.all([
+        attendanceService.getTodayOpenSession(user.uid),
+        attendanceService.getTodaySessions(user.uid),
+      ]);
+      setOpenSession(open);
+      setTodaySessions(sessions);
     } catch (error) {
       console.error("Failed to load today's record:", error);
       toast.error("Failed to load attendance record");
@@ -117,8 +122,10 @@ export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
       console.log("Punch in successful, record ID:", recordId);
 
       // Reload today's record to verify it was saved
-      const updatedRecord = await attendanceService.getTodayPunchIn(user.uid);
-      setTodayRecord(updatedRecord);
+      const updatedRecord = await attendanceService.getTodayOpenSession(user.uid);
+      const sessions = await attendanceService.getTodaySessions(user.uid);
+      setOpenSession(updatedRecord);
+      setTodaySessions(sessions);
 
       // Verify the record was saved correctly
       if (updatedRecord) {
@@ -149,7 +156,7 @@ export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
   };
 
   const handlePunchOut = async () => {
-    if (!todayRecord?.id) {
+    if (!openSession?.id) {
       toast.error("No punch in record found");
       return;
     }
@@ -157,7 +164,7 @@ export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
     setPunching(true);
     try {
       const location = await getCurrentLocation();
-      await attendanceService.punchOut(todayRecord.id, location);
+      await attendanceService.punchOut(openSession.id, location);
 
       await loadTodayRecord();
       toast.success("Punched out successfully");
@@ -171,15 +178,11 @@ export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
     }
   };
 
-  // Disable punch in if there's any record for today (even if punched out)
-  const canPunchIn = !todayRecord && locationPermission === "granted";
-  // Disable punch out if already punched out or no record exists
+  const displaySession =
+    openSession || todaySessions[todaySessions.length - 1] || null;
+  const canPunchIn = !openSession && locationPermission === "granted";
   const canPunchOut =
-    todayRecord &&
-    !todayRecord.punchOutTime &&
-    locationPermission === "granted";
-  // Both buttons disabled if already punched out today
-  const isCompleted = todayRecord?.punchOutTime !== undefined;
+    openSession && locationPermission === "granted";
 
   if (loading) {
     return (
@@ -225,47 +228,54 @@ export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
           </Alert>
         )}
 
-        {todayRecord && (
+        {displaySession && (
           <div className="space-y-2 rounded-lg border p-4">
+            {todaySessions.length > 1 ? (
+              <p className="text-xs text-muted-foreground">
+                {openSession
+                  ? `Active session (${todaySessions.length} visit${todaySessions.length === 1 ? "" : "s"} today)`
+                  : `${todaySessions.length} visits recorded today — punch in to start another`}
+              </p>
+            ) : null}
             <div className="flex items-center gap-2 text-sm">
               <Clock className="size-4" />
               <span className="font-medium">Punch In:</span>
-              <span>{formatDateTime(todayRecord.punchInTime)}</span>
+              <span>{formatDateTime(displaySession.punchInTime)}</span>
             </div>
-            {todayRecord.punchInLocation && (
+            {displaySession.punchInLocation && (
               <div className="flex items-start gap-2 text-sm">
                 <MapPin className="size-4 mt-0.5" />
                 <div>
                   <span className="font-medium">Location:</span>
                   <p className="text-muted-foreground">
-                    {todayRecord.punchInLocation.address}
+                    {displaySession.punchInLocation.address}
                   </p>
                 </div>
               </div>
             )}
-            {todayRecord.punchOutTime && (
+            {displaySession.punchOutTime && (
               <>
                 <div className="flex items-center gap-2 text-sm">
                   <Clock className="size-4" />
                   <span className="font-medium">Punch Out:</span>
-                  <span>{formatDateTime(todayRecord.punchOutTime)}</span>
+                  <span>{formatDateTime(displaySession.punchOutTime)}</span>
                 </div>
-                {todayRecord.punchOutLocation && (
+                {displaySession.punchOutLocation && (
                   <div className="flex items-start gap-2 text-sm">
                     <MapPin className="size-4 mt-0.5" />
                     <div>
                       <span className="font-medium">Location:</span>
                       <p className="text-muted-foreground">
-                        {todayRecord.punchOutLocation.address}
+                        {displaySession.punchOutLocation.address}
                       </p>
                     </div>
                   </div>
                 )}
-                {todayRecord.totalHours && (
+                {displaySession.totalHours && (
                   <div className="flex items-center gap-2 text-sm">
                     <Clock className="size-4" />
-                    <span className="font-medium">Total Hours:</span>
-                    <span>{todayRecord.totalHours} hours</span>
+                    <span className="font-medium">Session Hours:</span>
+                    <span>{displaySession.totalHours} hours</span>
                   </div>
                 )}
               </>
@@ -276,7 +286,7 @@ export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
         <div className="flex gap-2">
           <Button
             onClick={handlePunchIn}
-            disabled={!canPunchIn || punching || isCompleted}
+            disabled={!canPunchIn || punching}
             className="flex-1"
           >
             {punching ? (
@@ -290,7 +300,7 @@ export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
           </Button>
           <Button
             onClick={handlePunchOut}
-            disabled={!canPunchOut || punching || isCompleted}
+            disabled={!canPunchOut || punching}
             variant="destructive"
             className="flex-1"
           >

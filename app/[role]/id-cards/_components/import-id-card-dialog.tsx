@@ -186,7 +186,7 @@ export function ImportIdCardDialog({
   const handleImport = async () => {
     const readyRows = parsedRows.filter((row) => row._status === "ready");
     if (readyRows.length === 0) {
-      toast.error("No matching records to update. Check Bar Code ID or names.");
+      toast.error("No matching records to update. Check names and class-section.");
       return;
     }
 
@@ -284,10 +284,10 @@ export function ImportIdCardDialog({
             {title}
           </DialogTitle>
           <DialogDescription>
-            Use the same columns as export: Student Name, Class-Section, Contact
-            Num, Alt. Contact Num, DoB, Blood Group, Bar Code ID. Minor header
-            spelling differences and class/date formats are accepted. Invalid
-            values are rejected before import.
+            {kind === "student"
+              ? "Use the same columns as export: Sl. No., Student Name, Class-Section, Contact Num, Alt. Contact Num, DoB, Blood Group. Records are matched by name and class-section."
+              : "Use the same columns as export: Sl. No., Staff Name, Role, Contact Number, Blood Group. Records are matched by staff name."}{" "}
+            Invalid values are rejected before import.
           </DialogDescription>
         </DialogHeader>
 
@@ -354,21 +354,17 @@ export function ImportIdCardDialog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Row</TableHead>
+                    <TableHead>Sl. No.</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Bar Code ID</TableHead>
                     <TableHead>Match</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {parsedRows.map((row) => (
                     <TableRow key={row.rowNumber}>
-                      <TableCell>{row.rowNumber}</TableCell>
+                      <TableCell>{row.serialNumber}</TableCell>
                       <TableCell>
                         {"studentName" in row ? row.studentName : row.staffName}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {row.scanId || "-"}
                       </TableCell>
                       <TableCell>
                         {row._status === "ready" ? (

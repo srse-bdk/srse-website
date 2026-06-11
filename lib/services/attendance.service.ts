@@ -102,13 +102,31 @@ class AttendanceService {
   }
 
   /**
-   * Get today's attendance record for a staff member (including completed)
+   * Get today's open session (punched in, not yet out).
    */
-  async getTodayPunchIn(staffId: string): Promise<Attendance | null> {
+  async getTodayOpenSession(staffId: string): Promise<Attendance | null> {
+    const sessions = await this.getTodaySessions(staffId);
+    return sessions.find((record) => !record.punchOutTime) || null;
+  }
+
+  /**
+   * All attendance sessions for today, earliest first.
+   */
+  async getTodaySessions(staffId: string): Promise<Attendance[]> {
     const today = new Date().toISOString().split("T")[0];
     const records = await this.getByStaffId(staffId);
-    // Return today's record whether completed or not
-    return records.find((record) => record.date === today) || null;
+    return records
+      .filter((record) => record.date === today)
+      .sort((a, b) => a.punchInTime - b.punchInTime);
+  }
+
+  /**
+   * @deprecated Prefer getTodayOpenSession for gate/punch flows.
+   * Returns the most recent attendance row for today (open or completed).
+   */
+  async getTodayPunchIn(staffId: string): Promise<Attendance | null> {
+    const sessions = await this.getTodaySessions(staffId);
+    return sessions.length > 0 ? sessions[sessions.length - 1] : null;
   }
 
   /**

@@ -116,11 +116,7 @@ export function AppSidebar() {
   const { navigationItems, settingsItems } = useMenuItems();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
-  // Filter items by role
-  const filteredItems = useMemo(
-    () => navigationItems.filter((item) => item.roles.includes(role)),
-    [navigationItems, role]
-  );
+  const filteredItems = navigationItems;
 
   // Initialize open menus based on active path - fixed with useEffect
   useEffect(() => {
@@ -287,7 +283,7 @@ export function AppSidebar() {
                 animate="visible"
                 className="space-y-1.5"
               >
-                {settingsItems(role).map((item) => {
+                {settingsItems.map((item) => {
                   const href = `/${role}${item.url}`;
                   const isActive = isPathActive(pathname, href);
 

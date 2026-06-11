@@ -2,7 +2,7 @@
 
 import { UserCheck, UserX } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { BarcodeScanner } from "@/components/core/barcode-scanner";
+import { QrCodeScanner } from "@/components/core/barcode-scanner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,9 @@ import { getCurrentLocation } from "@/lib/utils/location";
 import { backfillMissingScanIds } from "@/lib/utils/scan-id";
 import { parseScanValue } from "@/lib/utils/scan-parser";
 import { toast } from "sonner";
+
+/** Minimum wait between opposing gate scans (IN→OUT or OUT→IN). */
+const STAFF_GATE_SCAN_COOLDOWN_MS = 60 * 1000;
 
 type ScanResultState =
   | {
@@ -267,15 +270,33 @@ export function StaffGateScanner() {
           return;
         }
 
-        const todayRecord = await attendanceService.getTodayPunchIn(person.id);
+        const openSession = await attendanceService.getTodayOpenSession(person.id);
+        const todaySessions = await attendanceService.getTodaySessions(person.id);
 
-        if (!todayRecord) {
+        if (!openSession) {
+          const lastSession = todaySessions.at(-1);
+          if (lastSession?.punchOutTime) {
+            const msSinceOut = now - lastSession.punchOutTime;
+            if (msSinceOut < STAFF_GATE_SCAN_COOLDOWN_MS) {
+              const waitSeconds = Math.ceil(
+                (STAFF_GATE_SCAN_COOLDOWN_MS - msSinceOut) / 1000,
+              );
+              setScanResult({
+                status: "warning",
+                message: `${person.name}'s OUT time is already recorded at ${formatDateTime(lastSession.punchOutTime)}. Please wait ${waitSeconds} second${waitSeconds === 1 ? "" : "s"} before scanning IN.`,
+                timestamp: now,
+              });
+              return;
+            }
+          }
+
           await attendanceService.punchIn({
             staffId: person.id,
             staffName: person.name,
             location,
           });
 
+          const sessionNumber = todaySessions.length + 1;
           setRecentEvents((prev) => [
             { id: person.id, name: person.name, action: "IN", time: now },
             ...prev.slice(0, 4),
@@ -283,7 +304,10 @@ export function StaffGateScanner() {
           setScanResult({
             status: "success",
             action: "in",
-            message: "Staff checked in successfully.",
+            message:
+              sessionNumber > 1
+                ? `Staff checked in successfully (visit ${sessionNumber} today).`
+                : "Staff checked in successfully.",
             person: {
               id: person.id,
               name: person.name,
@@ -295,30 +319,34 @@ export function StaffGateScanner() {
           return;
         }
 
-        if (!todayRecord.punchOutTime) {
-          await attendanceService.punchOut(todayRecord.id, location);
-          setRecentEvents((prev) => [
-            { id: person.id, name: person.name, action: "OUT", time: now },
-            ...prev.slice(0, 4),
-          ]);
+        const msSinceIn = now - openSession.punchInTime;
+        if (msSinceIn < STAFF_GATE_SCAN_COOLDOWN_MS) {
+          const waitSeconds = Math.ceil(
+            (STAFF_GATE_SCAN_COOLDOWN_MS - msSinceIn) / 1000,
+          );
           setScanResult({
-            status: "success",
-            action: "out",
-            message: "Staff checked out successfully.",
-            person: {
-              id: person.id,
-              name: person.name,
-              role: "staff",
-              profilePicture: person.profilePicture,
-            },
+            status: "warning",
+            message: `${person.name}'s IN time is already recorded at ${formatDateTime(openSession.punchInTime)}. Please wait ${waitSeconds} second${waitSeconds === 1 ? "" : "s"} before scanning OUT.`,
             timestamp: now,
           });
           return;
         }
 
+        await attendanceService.punchOut(openSession.id, location);
+        setRecentEvents((prev) => [
+          { id: person.id, name: person.name, action: "OUT", time: now },
+          ...prev.slice(0, 4),
+        ]);
         setScanResult({
-          status: "warning",
-          message: `${person.name} already has IN and OUT recorded for today.`,
+          status: "success",
+          action: "out",
+          message: "Staff checked out successfully. Wait 1 minute before scanning IN again.",
+          person: {
+            id: person.id,
+            name: person.name,
+            role: "staff",
+            profilePicture: person.profilePicture,
+          },
           timestamp: now,
         });
       } catch (error) {
@@ -363,18 +391,18 @@ export function StaffGateScanner() {
         <CardHeader>
           <CardTitle>Gate Scanner</CardTitle>
           <CardDescription>
-            Scan one unique ID for staff and students.
+            Scan the QR code on a staff or student ID card.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <BarcodeScanner onDetected={handleDetected} />
+          <QrCodeScanner onDetected={handleDetected} />
           <div className="rounded-md border p-3 space-y-2">
             <p className="text-sm font-medium">Manual Test Input</p>
             <div className="flex gap-2">
               <Input
                 value={manualScanValue}
                 onChange={(event) => setManualScanValue(event.target.value)}
-                placeholder="Enter scan ID / UID / admission / email / phone"
+                placeholder="Enter scan ID (e.g. STU-XXXXXXXX)"
               />
               <Button
                 type="button"
@@ -392,7 +420,8 @@ export function StaffGateScanner() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Staff scans mark IN/OUT and student scans mark PRESENT automatically.
+            Staff QR scans mark IN/OUT and student QR scans mark PRESENT
+            automatically.
           </p>
           {currentUser?.role === "admin" && (
             <div className="rounded-md border p-3 space-y-2">
@@ -457,7 +486,7 @@ export function StaffGateScanner() {
 
           {scanResult?.status === "warning" && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
-              <p className="font-medium">Already completed</p>
+              <p className="font-medium">Already recorded</p>
               <p className="text-sm">{scanResult.message}</p>
             </div>
           )}

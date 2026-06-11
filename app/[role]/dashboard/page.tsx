@@ -40,6 +40,8 @@ import {
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { Student } from "@/lib/types/student.type";
+import { StaffDashboard } from "./_components/staff-dashboard";
+import { StudentDashboard } from "./_components/student-dashboard";
 
 interface DashboardStats {
   totalStudents: number;
@@ -220,6 +222,10 @@ export default function DashboardPage() {
       try {
         setLoading(true);
 
+        if (user?.role === "staff" || user?.role === "student") {
+          return;
+        }
+
         const isParent = user?.role === "parent";
 
         if (isParent) {
@@ -353,7 +359,7 @@ export default function DashboardPage() {
     }
 
     loadDashboardData();
-  }, []);
+  }, [user?.role]);
 
   const quickActions = [
     {
@@ -423,6 +429,14 @@ export default function DashboardPage() {
       ],
     },
   ];
+
+  if (user?.role === "staff") {
+    return <StaffDashboard />;
+  }
+
+  if (user?.role === "student") {
+    return <StudentDashboard />;
+  }
 
   if (loading) {
     return (

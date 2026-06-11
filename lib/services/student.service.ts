@@ -7,7 +7,7 @@ import type {
     StudentUpdateInput,
 } from "@/lib/types/student.type";
 import type { User } from "@/lib/types/user.type";
-import { getStudentLoginEmailFromPen, normalizePen } from "@/lib/utils/student-login";
+import { getStudentLoginEmailFromPen, isValidStudentPen, parsePenFromImport } from "@/lib/utils/student-login";
 import {
   getClassSectionGroupKey,
   getNextRollNumberForClassSection,
@@ -16,7 +16,8 @@ import type { Enrollment } from "@/lib/types/enrollment.type";
 import type { Class } from "@/lib/types/class.type";
 import { ensureUniqueScanId, generateUniqueScanId } from "@/lib/utils/scan-id";
 import { getArrFromObj } from "@ashirbad/js-core";
-import { createUser, mutate } from "@atechhub/firebase";
+import { createUser, deleteUser, mutate } from "@atechhub/firebase";
+import { enrollmentService } from "./enrollment.service";
 
 class StudentService {
   /**
@@ -24,7 +25,7 @@ class StudentService {
    */
   async create(data: StudentInput): Promise<string> {
     const nowISO = new Date().toISOString();
-    const pen = data.pen ? normalizePen(data.pen) : "";
+    const pen = data.pen ? parsePenFromImport(data.pen) : "";
     const scanId = data.scanId
       ? await ensureUniqueScanId(data.scanId)
       : await generateUniqueScanId("STU");
@@ -66,7 +67,7 @@ class StudentService {
       );
     }
 
-    if (pen) {
+    if (pen && isValidStudentPen(pen)) {
       studentAuthEmail = getStudentLoginEmailFromPen(pen);
 
       try {
@@ -80,9 +81,24 @@ class StudentService {
           const existingUser = await this.getUserByEmail(studentAuthEmail);
           if (existingUser?.uid) {
             studentAuthUid = existingUser.uid;
+          } else {
+            // Auth exists but DB user missing — remove stale auth so import can proceed
+            try {
+              await deleteUser(studentAuthEmail, pen);
+              const authResponse = await createUser(studentAuthEmail, pen);
+              studentAuthUid = authResponse.localId;
+            } catch (retryError) {
+              console.warn(
+                "Could not reclaim student login for PEN; student will be created without login:",
+                retryError,
+              );
+            }
           }
         } else {
-          throw error;
+          console.warn(
+            "Could not create student login; student will be created without login:",
+            error,
+          );
         }
       }
     }
@@ -157,6 +173,11 @@ class StudentService {
         data: userPayload,
         actionBy: "admin",
       });
+    }
+
+    if (data.profilePicture) {
+      const { profilePhotoService } = await import("./profile-photo.service");
+      await profilePhotoService.refreshParentPhotosForStudent(studentId);
     }
 
     return studentId;
@@ -325,10 +346,15 @@ class StudentService {
       },
       actionBy: "admin",
     });
+
+    if (data.profilePicture !== undefined) {
+      const { profilePhotoService } = await import("./profile-photo.service");
+      await profilePhotoService.refreshParentPhotosForStudent(id);
+    }
   }
 
   /**
-   * Delete a student (with document cleanup)
+   * Delete a student (with document, enrollment, and login cleanup)
    */
   async delete(id: string): Promise<void> {
     const student = await this.getById(id);
@@ -342,7 +368,6 @@ class StudentService {
         await this.deleteFile(student.profilePictureFileKey);
       } catch (error) {
         console.error("Error deleting profile picture:", error);
-        // Continue with deletion even if file deletion fails
       }
     }
 
@@ -353,10 +378,19 @@ class StudentService {
           await this.deleteFile(doc.fileKey);
         } catch (error) {
           console.error(`Error deleting document ${doc.id}:`, error);
-          // Continue with deletion even if file deletion fails
         }
       }
     }
+
+    // Remove enrollments (orphaned enrollments block re-import roll numbers)
+    try {
+      await enrollmentService.deleteByStudentId(id);
+    } catch (error) {
+      console.error("Error deleting student enrollments:", error);
+    }
+
+    // Remove linked student login account
+    await this.deleteStudentLoginAccount(student);
 
     // Delete student record
     await mutate({
@@ -364,6 +398,52 @@ class StudentService {
       path: `students/${id}`,
       actionBy: "admin",
     });
+  }
+
+  private async deleteStudentLoginAccount(student: Student): Promise<void> {
+    const candidates: User[] = [];
+
+    if (student.pen && isValidStudentPen(student.pen)) {
+      const email = getStudentLoginEmailFromPen(student.pen);
+      const byEmail = await this.getUserByEmail(email);
+      if (byEmail) candidates.push(byEmail);
+    }
+
+    const usersData = await mutate({
+      action: "get",
+      path: "users",
+    });
+    const allUsers = getArrFromObj(usersData || {}) as unknown as User[];
+    for (const user of allUsers) {
+      if (user.role === "student" && user.studentId === student.id) {
+        if (!candidates.some((candidate) => candidate.uid === user.uid)) {
+          candidates.push(user);
+        }
+      }
+    }
+
+    for (const user of candidates) {
+      if (!user.email) continue;
+      const password = user.password || student.pen;
+      if (password) {
+        try {
+          await deleteUser(user.email, password);
+        } catch (error) {
+          console.error(`Error deleting auth for ${user.email}:`, error);
+        }
+      }
+      if (user.uid) {
+        try {
+          await mutate({
+            action: "delete",
+            path: `users/${user.uid}`,
+            actionBy: "admin",
+          });
+        } catch (error) {
+          console.error(`Error deleting user record ${user.uid}:`, error);
+        }
+      }
+    }
   }
 
   /**
@@ -678,6 +758,52 @@ class StudentService {
       console.error("Error deleting file:", error);
       throw error;
     }
+  }
+
+  async markIdCardPrinted(studentIds: string[]): Promise<number> {
+    const uniqueIds = [...new Set(studentIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return 0;
+
+    const nowISO = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (const studentId of uniqueIds) {
+      await mutate({
+        action: "update",
+        path: `students/${studentId}`,
+        data: {
+          idCardPrintedAt: nowISO,
+          updatedAt: nowISO,
+        },
+        actionBy: "admin",
+      });
+      updatedCount += 1;
+    }
+
+    return updatedCount;
+  }
+
+  async clearIdCardPrinted(studentIds: string[]): Promise<number> {
+    const uniqueIds = [...new Set(studentIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return 0;
+
+    const nowISO = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (const studentId of uniqueIds) {
+      await mutate({
+        action: "update",
+        path: `students/${studentId}`,
+        data: {
+          idCardPrintedAt: null,
+          updatedAt: nowISO,
+        },
+        actionBy: "admin",
+      });
+      updatedCount += 1;
+    }
+
+    return updatedCount;
   }
 }
 

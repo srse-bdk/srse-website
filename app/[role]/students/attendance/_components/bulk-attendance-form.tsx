@@ -18,7 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Loader2, Save, CheckCircle, XCircle, Clock } from "lucide-react";
-import { BarcodeScanner } from "@/components/core/barcode-scanner";
+import { QrCodeScanner } from "@/components/core/barcode-scanner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import {
@@ -658,13 +658,13 @@ export function BulkAttendanceForm() {
           <CardHeader>
             <CardTitle>Quick Card Scanner</CardTitle>
             <CardDescription>
-              Scan student card to auto-mark present in selected class and section.
+              Scan the QR code on a student ID card to auto-mark present.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="space-y-4">
-                <BarcodeScanner onDetected={handleStudentScan} />
+                <QrCodeScanner onDetected={handleStudentScan} />
                 <div className="rounded-md border p-3 space-y-2">
                   <p className="text-sm font-medium">Manual Test Input</p>
                   <div className="flex gap-2">
