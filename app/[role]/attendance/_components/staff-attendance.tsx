@@ -1,27 +1,22 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { Info, RefreshCw } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { PunchControl } from "./punch-control";
 import { AttendanceStats } from "./attendance-stats";
 import { AttendanceAnalytics } from "./attendance-analytics";
-import { AttendanceMap } from "./attendance-map";
 import { AttendanceHistory } from "./attendance-history";
 
 export function StaffAttendance() {
   const [refetchKey, setRefetchKey] = useState(0);
-  const punchControlRef = useRef<{ refetch: () => void }>(null);
   const attendanceStatsRef = useRef<{ refetch: () => void }>(null);
   const attendanceAnalyticsRef = useRef<{ refetch: () => void }>(null);
-  const attendanceMapRef = useRef<{ refetch: () => void }>(null);
   const attendanceHistoryRef = useRef<{ refetch: () => void }>(null);
 
   const handleRefresh = () => {
-    punchControlRef.current?.refetch();
     attendanceStatsRef.current?.refetch();
     attendanceAnalyticsRef.current?.refetch();
-    attendanceMapRef.current?.refetch();
     attendanceHistoryRef.current?.refetch();
     setRefetchKey((prev) => prev + 1);
   };
@@ -40,15 +35,22 @@ export function StaffAttendance() {
           Refresh
         </Button>
       </div>
-      <div className="grid gap-6 md:grid-cols-2">
-        <PunchControl ref={punchControlRef} key={`punch-${refetchKey}`} />
-        <AttendanceStats ref={attendanceStatsRef} key={`stats-${refetchKey}`} />
-      </div>
+
+      <Alert>
+        <Info className="size-4" />
+        <AlertTitle>Gate attendance only</AlertTitle>
+        <AlertDescription>
+          Your check-in and check-out are recorded when you scan your ID card at
+          the school entry and exit scanners. Self punch from this app is not
+          permitted.
+        </AlertDescription>
+      </Alert>
+
+      <AttendanceStats ref={attendanceStatsRef} key={`stats-${refetchKey}`} />
       <AttendanceAnalytics
         ref={attendanceAnalyticsRef}
         key={`analytics-${refetchKey}`}
       />
-      <AttendanceMap ref={attendanceMapRef} key={`map-${refetchKey}`} />
       <AttendanceHistory
         ref={attendanceHistoryRef}
         key={`history-${refetchKey}`}

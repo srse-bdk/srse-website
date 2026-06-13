@@ -1,5 +1,6 @@
 import type { Student } from "@/lib/types/student.type";
 import type { User } from "@/lib/types/user.type";
+import { formatClassSectionDisplay } from "@/lib/utils/student-display";
 import { sortStudentsByClassSectionRoll } from "@/lib/utils/student-roll-number";
 import { downloadExcelSheet } from "@/lib/utils/spreadsheet";
 
@@ -22,11 +23,8 @@ export const STAFF_ID_CARD_HEADERS = [
 ] as const;
 
 function formatClassSection(student: Student): string {
-  const cls = student.currentClass?.trim();
-  const sec = student.currentSection?.trim();
-  if (cls && sec) return `${cls}-${sec}`;
-  if (cls) return cls;
-  return "";
+  const formatted = formatClassSectionDisplay(student);
+  return formatted === "-" ? "" : formatted;
 }
 
 function formatDoB(isoDate?: string): string {

@@ -1,10 +1,8 @@
 "use client";
 
 import {
-  ID_CARD_GRID_COLUMNS,
-  ID_CARD_GRID_ROWS,
-  ID_CARD_WIDTH_MM,
-  ID_CARD_HEIGHT_MM,
+  getIdCardLayout,
+  type IdCardOrientation,
 } from "@/lib/config/id-card";
 import type { IdCardThemeId } from "@/lib/types/id-card-settings.type";
 import type { Student } from "@/lib/types/student.type";
@@ -18,6 +16,7 @@ interface IdCardPrintPagesProps {
   themeId?: IdCardThemeId;
   academicYear?: string;
   principalSignatureUrl?: string;
+  orientation?: IdCardOrientation;
   students?: Student[];
   staffMembers?: User[];
   studentPages?: Student[][];
@@ -31,11 +30,15 @@ function PrintPageGrid({
   children,
   pageClassName,
   singleCard = false,
+  orientation = "landscape",
 }: {
   children: React.ReactNode;
   pageClassName?: string;
   singleCard?: boolean;
+  orientation?: IdCardOrientation;
 }) {
+  const layout = getIdCardLayout(orientation);
+
   if (singleCard) {
     return (
       <div
@@ -67,10 +70,10 @@ function PrintPageGrid({
         minHeight: "297mm",
         padding: "8mm",
         display: "grid",
-        gridTemplateColumns: `repeat(${ID_CARD_GRID_COLUMNS}, ${ID_CARD_WIDTH_MM}mm)`,
-        gridTemplateRows: `repeat(${ID_CARD_GRID_ROWS}, ${ID_CARD_HEIGHT_MM}mm)`,
-        columnGap: "4mm",
-        rowGap: "3mm",
+        gridTemplateColumns: `repeat(${layout.gridColumns}, ${layout.widthMm}mm)`,
+        gridTemplateRows: `repeat(${layout.gridRows}, ${layout.heightMm}mm)`,
+        columnGap: `${layout.columnGapMm}mm`,
+        rowGap: `${layout.rowGapMm}mm`,
         justifyContent: "center",
         alignContent: "start",
         pageBreakAfter: "always",
@@ -87,6 +90,7 @@ export function IdCardPrintPages({
   themeId,
   academicYear,
   principalSignatureUrl,
+  orientation = "landscape",
   students,
   staffMembers,
   studentPages,
@@ -103,6 +107,7 @@ export function IdCardPrintPages({
             key={`student-page-${pageIndex}`}
             pageClassName={pageClassName}
             singleCard={singleCard && pageStudents.length === 1}
+            orientation={orientation}
           >
             {pageStudents.map((student) => (
               <StudentIdCard
@@ -111,6 +116,7 @@ export function IdCardPrintPages({
                 themeId={themeId}
                 academicYear={academicYear}
                 principalSignatureUrl={principalSignatureUrl}
+                orientation={orientation}
               />
             ))}
           </PrintPageGrid>
@@ -127,6 +133,7 @@ export function IdCardPrintPages({
             key={`staff-page-${pageIndex}`}
             pageClassName={pageClassName}
             singleCard={singleCard && pageStaff.length === 1}
+            orientation={orientation}
           >
             {pageStaff.map((staff) => (
               <StaffIdCard
@@ -135,6 +142,7 @@ export function IdCardPrintPages({
                 themeId={themeId}
                 academicYear={academicYear}
                 principalSignatureUrl={principalSignatureUrl}
+                orientation={orientation}
               />
             ))}
           </PrintPageGrid>
@@ -145,12 +153,7 @@ export function IdCardPrintPages({
 
   if (kind === "student" && students) {
     return (
-      <div
-        className={cn(
-          "flex flex-wrap justify-center gap-6",
-          className,
-        )}
-      >
+      <div className={cn("flex flex-wrap justify-center gap-6", className)}>
         {students.map((student) => (
           <StudentIdCard
             key={student.id}
@@ -158,6 +161,7 @@ export function IdCardPrintPages({
             themeId={themeId}
             academicYear={academicYear}
             principalSignatureUrl={principalSignatureUrl}
+            orientation={orientation}
           />
         ))}
       </div>
@@ -166,12 +170,7 @@ export function IdCardPrintPages({
 
   if (kind === "staff" && staffMembers) {
     return (
-      <div
-        className={cn(
-          "flex flex-wrap justify-center gap-6",
-          className,
-        )}
-      >
+      <div className={cn("flex flex-wrap justify-center gap-6", className)}>
         {staffMembers.map((staff) => (
           <StaffIdCard
             key={staff.id}
@@ -179,6 +178,7 @@ export function IdCardPrintPages({
             themeId={themeId}
             academicYear={academicYear}
             principalSignatureUrl={principalSignatureUrl}
+            orientation={orientation}
           />
         ))}
       </div>

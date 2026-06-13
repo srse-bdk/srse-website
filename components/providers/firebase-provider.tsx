@@ -78,7 +78,11 @@ export function FirebaseProvider({ children }: FirebaseProviderProps) {
                 return;
               }
 
-              setUser(userData);
+              setUser({
+                ...userData,
+                uid: loggedInUser.uid,
+                id: loggedInUser.uid,
+              });
               console.log("User data loaded:", userData);
 
               // Initialize messaging and get token when user is logged in

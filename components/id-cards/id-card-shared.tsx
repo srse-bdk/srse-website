@@ -8,6 +8,7 @@ interface IdCardDetailRowProps {
   label: string;
   value?: string;
   className?: string;
+  compact?: boolean;
 }
 
 export function IdCardDetailRow({
@@ -15,11 +16,23 @@ export function IdCardDetailRow({
   label,
   value,
   className,
+  compact = false,
 }: IdCardDetailRowProps) {
   if (!value?.trim()) return null;
 
   return (
-    <p className={cn("text-[7.5px] leading-snug", className)}>
+    <p
+      className={cn(
+        compact ? "leading-[1.2]" : "text-[7.5px] leading-snug",
+        !compact && "text-[7.5px]",
+        className,
+      )}
+      style={
+        compact
+          ? { fontSize: "1.65mm" }
+          : undefined
+      }
+    >
       <span className="font-bold" style={{ color: theme.labelColor }}>
         {label}:
       </span>{" "}
@@ -34,17 +47,23 @@ interface IdCardPrincipalSignatureProps {
   principalSignatureUrl?: string;
   theme: IdCardTheme;
   className?: string;
+  compact?: boolean;
+  align?: "center" | "start";
 }
 
 export function IdCardPrincipalSignature({
   principalSignatureUrl,
   theme,
   className,
+  compact = false,
+  align = "center",
 }: IdCardPrincipalSignatureProps) {
   return (
     <div
       className={cn(
-        "flex w-full max-w-full shrink-0 flex-col items-center",
+        "flex max-w-full shrink-0 flex-col",
+        align === "start" ? "items-start" : "items-center",
+        compact ? "w-[11mm]" : "w-full",
         className,
       )}
     >
@@ -53,17 +72,31 @@ export function IdCardPrincipalSignature({
           src={principalSignatureUrl}
           alt=""
           crossOrigin="anonymous"
-          className="h-[7mm] w-[12mm] object-contain object-bottom"
+          className={
+            compact
+              ? "h-[5.5mm] w-[10mm] object-contain object-bottom"
+              : "h-[7mm] w-[12mm] object-contain object-bottom"
+          }
         />
       ) : (
         <div
-          className="h-[7mm] w-[12mm] border-b border-dotted"
+          className={
+            compact
+              ? "h-[5.5mm] w-[10mm] border-b border-dotted"
+              : "h-[7mm] w-[12mm] border-b border-dotted"
+          }
           style={{ borderColor: theme.labelColor }}
         />
       )}
       <p
-        className="mt-0.5 shrink-0 text-center text-[6px] font-bold leading-none"
-        style={{ color: theme.labelColor }}
+        className={cn(
+          "mt-[0.3mm] shrink-0 font-bold leading-none",
+          align === "start" ? "text-left" : "text-center",
+        )}
+        style={{
+          color: theme.labelColor,
+          fontSize: compact ? "1.4mm" : "6px",
+        }}
       >
         Principal
       </p>
@@ -118,8 +151,20 @@ export function formatNameForIdCard(
   return lines;
 }
 
-function getIdCardNameFontSize(lines: string[]): string {
+function getIdCardNameFontSize(lines: string[], compact = false): string {
   const longestLine = Math.max(...lines.map((line) => line.length), 0);
+
+  if (compact) {
+    if (lines.length >= 3) {
+      return longestLine > 18 ? "1.65mm" : "1.75mm";
+    }
+    if (lines.length === 2) {
+      return longestLine > 18 ? "1.75mm" : "1.85mm";
+    }
+    if (longestLine > 24) return "1.75mm";
+    if (longestLine > 18) return "1.85mm";
+    return "2mm";
+  }
 
   if (lines.length >= 3) {
     return longestLine > 18 ? "6.5px" : "7px";
@@ -134,13 +179,16 @@ function getIdCardNameFontSize(lines: string[]): string {
   return "10px";
 }
 
-export function getIdCardNameStyle(lines: string[]): {
+export function getIdCardNameStyle(
+  lines: string[],
+  compact = false,
+): {
   fontSize: string;
   lineHeight: number;
 } {
   return {
-    fontSize: getIdCardNameFontSize(lines),
-    lineHeight: lines.length > 1 ? 1.12 : 1.15,
+    fontSize: getIdCardNameFontSize(lines, compact),
+    lineHeight: lines.length > 1 ? 1.1 : 1.15,
   };
 }
 

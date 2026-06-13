@@ -164,7 +164,10 @@ export const PunchControl = forwardRef<PunchControlRef>((_, ref) => {
     setPunching(true);
     try {
       const location = await getCurrentLocation();
-      await attendanceService.punchOut(openSession.id, location);
+      await attendanceService.punchOut(openSession.id, {
+        location,
+        source: "self-punch",
+      });
 
       await loadTodayRecord();
       toast.success("Punched out successfully");

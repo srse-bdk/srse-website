@@ -1,7 +1,7 @@
 "use client";
 
 import { format, isValid, parse } from "date-fns";
-import { BarChart3, List, MapPin, ScanLine } from "lucide-react";
+import { BarChart3, List, LogIn, LogOut, MapPin, ScanLine } from "lucide-react";
 import { motion } from "motion/react";
 import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useState } from "react";
@@ -13,7 +13,7 @@ import { AdminAttendanceAnalytics } from "./admin-attendance-analytics";
 import { AdminAttendanceCharts } from "./admin-attendance-charts";
 import { AdminAttendanceMap } from "./admin-attendance-map";
 import { AttendanceFilters } from "./attendance-filters";
-import { StaffGateScanner } from "./staff-gate-scanner";
+import { GateScanner } from "./staff-gate-scanner";
 
 const tabs = [
   { id: "map", label: "Map", icon: MapPin },
@@ -148,8 +148,26 @@ export function AdminAttendanceView() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
+            className="space-y-4"
           >
-            <StaffGateScanner />
+            <Tabs defaultValue="entry" className="w-full">
+              <TabsList className="grid w-full max-w-md grid-cols-2">
+                <TabsTrigger value="entry" className="gap-2">
+                  <LogIn className="size-4" />
+                  Entry
+                </TabsTrigger>
+                <TabsTrigger value="exit" className="gap-2">
+                  <LogOut className="size-4" />
+                  Exit
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="entry" className="mt-4">
+                <GateScanner mode="entry" />
+              </TabsContent>
+              <TabsContent value="exit" className="mt-4">
+                <GateScanner mode="exit" />
+              </TabsContent>
+            </Tabs>
           </motion.div>
         </TabsContent>
       </Tabs>

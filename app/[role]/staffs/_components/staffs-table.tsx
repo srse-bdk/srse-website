@@ -48,6 +48,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { User } from "@/lib/types/user.type";
+import { isProfileOnlyStaff } from "@/lib/utils/staff-profile";
 import { BulkActionDialog } from "./bulk-action-dialog";
 import { DeleteStaffDialog } from "./delete-staff-dialog";
 import { ImportStaffsDialog } from "./import-staffs-dialog";
@@ -268,12 +269,20 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
             </>
           )}
           <Button
-            onClick={() => router.push(`/${role}/staffs/create`)}
+            onClick={() =>
+              router.push(
+                staffType === "non-teaching"
+                  ? `/${role}/staffs/create?type=non-teaching`
+                  : `/${role}/staffs/create`,
+              )
+            }
             className="flex items-center gap-2"
             size="sm"
           >
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Add Staff</span>
+            <span className="hidden sm:inline">
+              {staffType === "non-teaching" ? "Add Non-Teaching" : "Add Staff"}
+            </span>
             <span className="sm:hidden">Add</span>
           </Button>
         </div>
@@ -355,11 +364,19 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
               </p>
               {!searchTerm && (
                 <Button
-                  onClick={() => router.push(`/${role}/staffs/create`)}
+                  onClick={() =>
+                    router.push(
+                      staffType === "non-teaching"
+                        ? `/${role}/staffs/create?type=non-teaching`
+                        : `/${role}/staffs/create`,
+                    )
+                  }
                   size="sm"
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Staff
+                  {staffType === "non-teaching"
+                    ? "Add Non-Teaching Staff"
+                    : "Add Staff"}
                 </Button>
               )}
             </div>
@@ -501,16 +518,18 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
                                     View Timetable
                                   </DropdownMenuItem>
                                 )}
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    router.push(
-                                      `/${role}/staffs/${staff.id}/password`,
-                                    )
-                                  }
-                                >
-                                  <Key className="mr-2 h-4 w-4" />
-                                  Change Password
-                                </DropdownMenuItem>
+                                {!isProfileOnlyStaff(staff) ? (
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      router.push(
+                                        `/${role}/staffs/${staff.id}/password`,
+                                      )
+                                    }
+                                  >
+                                    <Key className="mr-2 h-4 w-4" />
+                                    Change Password
+                                  </DropdownMenuItem>
+                                ) : null}
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   onClick={() => openDeleteDialog(staff)}
@@ -627,16 +646,18 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
                                 View Timetable
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem
-                              onClick={() =>
-                                router.push(
-                                  `/${role}/staffs/${staff.id}/password`,
-                                )
-                              }
-                            >
-                              <Key className="mr-2 h-4 w-4" />
-                              Change Password
-                            </DropdownMenuItem>
+                            {!isProfileOnlyStaff(staff) ? (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  router.push(
+                                    `/${role}/staffs/${staff.id}/password`,
+                                  )
+                                }
+                              >
+                                <Key className="mr-2 h-4 w-4" />
+                                Change Password
+                              </DropdownMenuItem>
+                            ) : null}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onClick={() => openDeleteDialog(staff)}

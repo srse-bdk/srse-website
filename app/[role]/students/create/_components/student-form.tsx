@@ -66,6 +66,7 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { normalizeBloodGroup } from "@/lib/utils/blood-group";
 
 // Zod schema - Only name is required
 const guardianSchema = z.object({
@@ -226,7 +227,7 @@ function studentToFormDefaults(student: Student): StudentFormData {
     lastName: student.lastName || nameFromFull?.lastName || "",
     dateOfBirth: student.dateOfBirth || "",
     gender: student.gender,
-    bloodGroup: student.bloodGroup,
+    bloodGroup: normalizeBloodGroup(student.bloodGroup),
     email: student.email || "",
     phone: student.phone || "",
     alternatePhone: student.alternatePhone || "",
@@ -311,13 +312,15 @@ function buildStudentPayloadFromForm(
       })
       .filter((d): d is StudentDocument => d !== null) || [];
 
+  const normalizedBloodGroup = normalizeBloodGroup(data.bloodGroup);
+
   const payload = {
     ...(data.admissionDate && { admissionDate: data.admissionDate }),
     firstName: data.firstName,
     lastName: data.lastName,
     ...(data.dateOfBirth && { dateOfBirth: data.dateOfBirth }),
     ...(data.gender && { gender: data.gender }),
-    ...(data.bloodGroup && { bloodGroup: data.bloodGroup }),
+    ...(normalizedBloodGroup && { bloodGroup: normalizedBloodGroup }),
     ...(data.email && { email: data.email }),
     ...(data.phone && { phone: data.phone }),
     ...(data.alternatePhone && { alternatePhone: data.alternatePhone }),
@@ -886,7 +889,9 @@ export function StudentForm({ student }: StudentFormProps = {}) {
               <FormField
                 control={form.control}
                 name="bloodGroup"
-                render={({ field }) => (
+                render={({ field }) => {
+                  const selectedBloodGroup = normalizeBloodGroup(field.value);
+                  return (
                   <FormItem>
                     <FormLabel>Blood Group</FormLabel>
                     <FormControl>
@@ -903,7 +908,7 @@ export function StudentForm({ student }: StudentFormProps = {}) {
                             "O-",
                           ] as const
                         ).map((option) => {
-                          const isSelected = field.value === option;
+                          const isSelected = selectedBloodGroup === option;
                           return (
                             <motion.button
                               key={option}
@@ -943,7 +948,8 @@ export function StudentForm({ student }: StudentFormProps = {}) {
                     </FormControl>
                     <FormMessage />
                   </FormItem>
-                )}
+                  );
+                }}
               />
             </div>
 

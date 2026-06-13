@@ -323,16 +323,23 @@ export function IdCardSquarePhoto({
 export function IdCardPersonName({
   name,
   theme,
+  compact = false,
+  className,
 }: {
   name: string;
   theme: IdCardTheme;
+  compact?: boolean;
+  className?: string;
 }) {
-  const lines = formatNameForIdCard(name, 3);
-  const { fontSize, lineHeight } = getIdCardNameStyle(lines);
+  const lines = formatNameForIdCard(name, compact ? 2 : 3);
+  const { fontSize, lineHeight } = getIdCardNameStyle(lines, compact);
 
   return (
     <div
-      className="mb-0.5 w-full min-w-0 shrink-0"
+      className={cn(
+        "w-full min-w-0 shrink-0",
+        className,
+      )}
       style={{ color: theme.labelColor }}
     >
       {lines.map((line, index) => (

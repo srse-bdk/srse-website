@@ -49,6 +49,7 @@ class StudentAttendanceService {
       markedBy,
       markedAt: now,
       notes: data.notes,
+      ...(data.arrivalTime != null && { arrivalTime: data.arrivalTime }),
       createdAt: nowISO,
       updatedAt: nowISO,
     };
@@ -268,7 +269,11 @@ class StudentAttendanceService {
   /**
    * Update attendance record
    */
-  async update(id: string, data: StudentAttendanceUpdateInput): Promise<void> {
+  async update(
+    id: string,
+    data: StudentAttendanceUpdateInput,
+    actionBy = "admin",
+  ): Promise<void> {
     const nowISO = new Date().toISOString();
 
     await mutate({
@@ -278,8 +283,21 @@ class StudentAttendanceService {
         ...data,
         updatedAt: nowISO,
       },
-      actionBy: "admin",
+      actionBy,
     });
+  }
+
+  /** Record gate exit scan on an existing attendance row for today. */
+  async recordGateDismissal(
+    attendanceId: string,
+    markedBy: string,
+  ): Promise<void> {
+    const now = Date.now();
+    await this.update(
+      attendanceId,
+      { dismissalTime: now },
+      markedBy,
+    );
   }
 
   /**

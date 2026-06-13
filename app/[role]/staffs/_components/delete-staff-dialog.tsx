@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { staffService } from "@/lib/services";
 import type { User } from "@/lib/types/user.type";
+import { isProfileOnlyStaff } from "@/lib/utils/staff-profile";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -32,16 +33,23 @@ export function DeleteStaffDialog({
 }: DeleteStaffDialogProps) {
   const [deletePassword, setDeletePassword] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const profileOnly = staff ? isProfileOnlyStaff(staff) : false;
 
   const handleDelete = async () => {
-    if (!staff || !deletePassword.trim()) {
+    if (!staff) return;
+
+    if (!profileOnly && !deletePassword.trim()) {
       toast.error("Please enter the staff password to confirm deletion");
       return;
     }
 
     setIsDeleting(true);
     try {
-      await staffService.delete(staff.id, staff.email, deletePassword);
+      if (profileOnly) {
+        await staffService.deleteProfileOnly(staff.id);
+      } else {
+        await staffService.delete(staff.id, staff.email, deletePassword);
+      }
       toast.success("Staff deleted successfully!");
       onSuccess();
       onOpenChange(false);
@@ -49,7 +57,9 @@ export function DeleteStaffDialog({
     } catch (error) {
       console.error("Error deleting staff:", error);
       toast.error(
-        "Failed to delete staff. Please check the password and try again.",
+        profileOnly
+          ? "Failed to delete staff profile. Please try again."
+          : "Failed to delete staff. Please check the password and try again.",
       );
     } finally {
       setIsDeleting(false);
@@ -67,28 +77,31 @@ export function DeleteStaffDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete Staff</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete <strong>{staff?.name}</strong>? This
-            action will permanently remove the staff account and cannot be
-            undone.
+            Are you sure you want to delete <strong>{staff?.name}</strong>?
+            {profileOnly
+              ? " This will permanently remove their ID card profile."
+              : " This action will permanently remove the staff account and cannot be undone."}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        <div className="py-4">
-          <div className="space-y-2">
-            <Label htmlFor="delete-password">Enter Staff Password</Label>
-            <Input
-              id="delete-password"
-              type="password"
-              placeholder="Enter staff password to confirm deletion"
-              value={deletePassword}
-              onChange={(e) => setDeletePassword(e.target.value)}
-              disabled={isDeleting}
-            />
-            <p className="text-sm text-muted-foreground">
-              You must enter the staff's password to confirm deletion.
-            </p>
+        {!profileOnly ? (
+          <div className="py-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-password">Enter Staff Password</Label>
+              <Input
+                id="delete-password"
+                type="password"
+                placeholder="Enter staff password to confirm deletion"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                disabled={isDeleting}
+              />
+              <p className="text-sm text-muted-foreground">
+                You must enter the staff&apos;s password to confirm deletion.
+              </p>
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <AlertDialogFooter>
           <AlertDialogCancel onClick={handleCancel} disabled={isDeleting}>
@@ -96,7 +109,7 @@ export function DeleteStaffDialog({
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={handleDelete}
-            disabled={isDeleting || !deletePassword.trim()}
+            disabled={isDeleting || (!profileOnly && !deletePassword.trim())}
             className="bg-red-600 hover:bg-red-700"
           >
             {isDeleting ? "Deleting..." : "Delete"}

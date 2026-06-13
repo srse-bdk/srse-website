@@ -17,45 +17,34 @@ class AttendanceService {
     const nowISO = new Date().toISOString();
     const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
-    // Validate required fields
-    if (!data.staffId || !data.staffName || !data.location) {
+    if (!data.staffId || !data.staffName) {
       throw new Error("Missing required fields for punch in");
     }
 
-    // Validate location structure
-    if (
-      typeof data.location.lat !== "number" ||
-      typeof data.location.lng !== "number" ||
-      !data.location.address
-    ) {
-      throw new Error("Invalid location data");
-    }
-
-    const recordData = {
+    const recordData: Record<string, unknown> = {
       staffId: data.staffId,
       staffName: data.staffName,
       date: today,
       punchInTime: now,
-      punchInLocation: {
+      status: "present" as const,
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    };
+
+    if (data.source) {
+      recordData.punchInSource = data.source;
+    }
+
+    if (data.location) {
+      recordData.punchInLocation = {
         lat: data.location.lat,
         lng: data.location.lng,
         address: data.location.address,
         ...(data.location.locationId && {
           locationId: data.location.locationId,
         }),
-      },
-      status: "present" as const,
-      createdAt: nowISO,
-      updatedAt: nowISO,
-    };
-
-    console.log("Creating attendance record with data:", {
-      ...recordData,
-      punchInLocation: {
-        ...recordData.punchInLocation,
-        address: recordData.punchInLocation.address.substring(0, 50) + "...",
-      },
-    });
+      };
+    }
 
     const recordId = await mutate({
       action: "createWithId",
@@ -64,17 +53,15 @@ class AttendanceService {
       actionBy: data.staffId,
     });
 
-    console.log("Attendance record created with ID:", recordId);
-
     return recordId;
   }
 
   /**
-   * Punch out - Update existing record with punch out time and location
+   * Punch out - Update existing record with punch out time and optional location
    */
   async punchOut(
     recordId: string,
-    location: AttendanceLocation,
+    options?: { location?: AttendanceLocation; source?: AttendanceInput["source"] },
   ): Promise<void> {
     const record = await this.getById(recordId);
     if (!record) {
@@ -88,15 +75,24 @@ class AttendanceService {
         ((punchOutTime - record.punchInTime) / (1000 * 60 * 60)) * 100,
       ) / 100;
 
+    const updateData: Record<string, unknown> = {
+      punchOutTime,
+      totalHours,
+      updatedAt: nowISO,
+    };
+
+    if (options?.source) {
+      updateData.punchOutSource = options.source;
+    }
+
+    if (options?.location) {
+      updateData.punchOutLocation = options.location;
+    }
+
     await mutate({
       action: "update",
       path: `attendance/${recordId}`,
-      data: {
-        punchOutTime,
-        punchOutLocation: location,
-        totalHours,
-        updatedAt: nowISO,
-      },
+      data: updateData,
       actionBy: record.staffId,
     });
   }

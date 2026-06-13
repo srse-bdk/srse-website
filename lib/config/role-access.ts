@@ -60,6 +60,7 @@ const STAFF_ROUTE_PATTERNS = [
   "/dashboard",
   "/settings",
   "/attendance",
+  "/leave",
   "/staffs/:staffId/time-table",
 ];
 

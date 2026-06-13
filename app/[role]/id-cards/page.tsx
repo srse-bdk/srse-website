@@ -6,6 +6,7 @@ import {
   Download,
   GraduationCap,
   Printer,
+  QrCode,
   Upload,
   Image as ImageIcon,
   Users2Icon,
@@ -30,6 +31,7 @@ import {
   downloadStaffIdCardsExcel,
   downloadStudentIdCardsExcel,
 } from "@/lib/utils/id-card-export";
+import { backfillMissingScanIds } from "@/lib/utils/scan-id";
 
 export default function IdCardDataPage() {
   const [isExportingStudents, setIsExportingStudents] = useState(false);
@@ -38,6 +40,7 @@ export default function IdCardDataPage() {
   const [staffImportOpen, setStaffImportOpen] = useState(false);
   const [studentPhotoUploadOpen, setStudentPhotoUploadOpen] = useState(false);
   const [staffPhotoUploadOpen, setStaffPhotoUploadOpen] = useState(false);
+  const [isBackfillingScanIds, setIsBackfillingScanIds] = useState(false);
 
   const {
     data: studentsData,
@@ -99,6 +102,33 @@ export default function IdCardDataPage() {
       setIsExportingStaff(false);
     }
   };
+
+  const handleBackfillScanIds = async () => {
+    setIsBackfillingScanIds(true);
+    try {
+      const result = await backfillMissingScanIds();
+      toast.success(
+        `Scan IDs assigned. Staff/users: ${result.usersUpdated}, students: ${result.studentsUpdated}`,
+      );
+    } catch (error) {
+      console.error("Scan ID backfill failed:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to backfill scan IDs",
+      );
+    } finally {
+      setIsBackfillingScanIds(false);
+    }
+  };
+
+  const studentsWithoutScanId = useMemo(
+    () => activeStudents.filter((s) => !String(s.scanId || "").trim()).length,
+    [activeStudents],
+  );
+
+  const staffWithoutScanId = useMemo(
+    () => activeStaff.filter((s) => !String(s.scanId || "").trim()).length,
+    [activeStaff],
+  );
 
   const isLoading = studentsLoading || staffLoading;
 
@@ -231,6 +261,34 @@ export default function IdCardDataPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <QrCode className="h-5 w-5" />
+            QR Scan IDs
+          </CardTitle>
+          <CardDescription>
+            Gate scanners read each card&apos;s unique scan ID (
+            <span className="font-mono">STU-…</span> /{" "}
+            <span className="font-mono">STF-…</span>). Generate missing IDs before
+            printing — {studentsWithoutScanId} student(s) and {staffWithoutScanId}{" "}
+            staff without a scan ID.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            variant="secondary"
+            onClick={handleBackfillScanIds}
+            disabled={isBackfillingScanIds}
+          >
+            <QrCode
+              className={`mr-2 h-4 w-4 ${isBackfillingScanIds ? "animate-pulse" : ""}`}
+            />
+            {isBackfillingScanIds ? "Generating…" : "Backfill missing scan IDs"}
+          </Button>
+        </CardContent>
+      </Card>
 
       <ImportIdCardDialog
         kind="student"

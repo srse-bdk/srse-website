@@ -5,10 +5,48 @@ import {
   deleteUser,
   mutate,
 } from "@atechhub/firebase";
-import type { User, UserInput, UserUpdateInput } from "@/lib/types/user.type";
+import type { User, UserInput, UserUpdateInput, ProfileOnlyStaffInput } from "@/lib/types/user.type";
 import { ensureUniqueScanId, generateUniqueScanId } from "@/lib/utils/scan-id";
+import { isProfileOnlyStaff } from "@/lib/utils/staff-profile";
+
+function generateProfileStaffId(): string {
+  return `staff_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 class StaffService {
+  /**
+   * Create a non-teaching profile for ID cards only (no Firebase Auth login).
+   */
+  async createProfileOnly(data: ProfileOnlyStaffInput): Promise<{ userId: string }> {
+    const profileId = generateProfileStaffId();
+    const scanId = data.scanId
+      ? await ensureUniqueScanId(data.scanId)
+      : await generateUniqueScanId("STF");
+
+    const userId = await mutate({
+      action: "create",
+      path: `users/${profileId}`,
+      data: {
+        uid: profileId,
+        scanId,
+        name: data.name,
+        email: "",
+        password: "",
+        role: "staff",
+        status: "active",
+        staffType: "non-teaching",
+        hasLogin: false,
+        bloodGroup: data.bloodGroup,
+        position: data.position,
+        phoneNumber: data.phoneNumber,
+        subjectAssignments: [],
+      },
+      actionBy: "admin",
+    });
+
+    return { userId: userId || profileId };
+  }
+
   /**
    * Create a new staff (includes Firebase Auth user creation)
    */
@@ -40,6 +78,7 @@ class StaffService {
         position: data.position,
         staffType: data.staffType,
         phoneNumber: data.phoneNumber,
+        hasLogin: true,
         subjectAssignments: data.subjectAssignments || [],
       },
       actionBy: "admin",
@@ -87,6 +126,17 @@ class StaffService {
   }
 
   /**
+   * Delete a profile-only staff record (no Firebase Auth account).
+   */
+  async deleteProfileOnly(id: string): Promise<void> {
+    await mutate({
+      action: "delete",
+      path: `users/${id}`,
+      actionBy: "admin",
+    });
+  }
+
+  /**
    * Delete a staff (includes Firebase Auth user deletion)
    */
   async delete(
@@ -110,10 +160,14 @@ class StaffService {
    * This is a simpler version that doesn't require manual password input
    */
   async deleteById(id: string): Promise<void> {
-    // Get the staff to retrieve email and stored password
     const staff = await this.getById(id);
     if (!staff) {
       throw new Error("Staff not found");
+    }
+
+    if (isProfileOnlyStaff(staff)) {
+      await this.deleteProfileOnly(id);
+      return;
     }
 
     if (!staff.email || !staff.password) {

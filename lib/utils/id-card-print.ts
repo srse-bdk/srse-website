@@ -2,7 +2,7 @@ import type { Student } from "@/lib/types/student.type";
 import type { User } from "@/lib/types/user.type";
 import { normalizeSectionToken } from "@/lib/utils/class-section-match";
 import { sortStudentsForIdCardExport } from "@/lib/utils/id-card-export";
-import { ID_CARDS_PER_PAGE } from "@/lib/config/id-card";
+import { getIdCardLayout, type IdCardOrientation } from "@/lib/config/id-card";
 
 export type IdCardKind = "student" | "staff";
 export type IdCardPrintMode = "single" | "bulk";
@@ -89,8 +89,9 @@ export function getIdCardPrintFilterStats<T extends PrintableRecord>(
 
 export function chunkIdCardPages<T>(
   items: T[],
-  pageSize = ID_CARDS_PER_PAGE,
+  orientation: IdCardOrientation = "landscape",
 ): T[][] {
+  const pageSize = getIdCardLayout(orientation).cardsPerPage;
   if (items.length === 0) return [];
   const pages: T[][] = [];
   for (let index = 0; index < items.length; index += pageSize) {

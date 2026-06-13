@@ -10,3 +10,8 @@ export * from "./time-table.service";
 export * from "./parent.service";
 export * from "./fee.service";
 export * from "./profile-photo.service";
+export * from "./leave-type.service";
+export * from "./school-calendar.service";
+export * from "./staff-leave.service";
+export * from "./staff-leave-accrual.service";
+export * from "./student-gate-notification.service";

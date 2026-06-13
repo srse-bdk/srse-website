@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 interface QrCodeScannerProps {
   onDetected: (value: string) => void;
   className?: string;
+  /** Start camera as soon as the component mounts (gate kiosks). */
+  autoStart?: boolean;
 }
 
 function createQrReader() {
@@ -18,7 +20,11 @@ function createQrReader() {
   return new BrowserQRCodeReader(hints);
 }
 
-export function QrCodeScanner({ onDetected, className }: QrCodeScannerProps) {
+export function QrCodeScanner({
+  onDetected,
+  className,
+  autoStart = false,
+}: QrCodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const scannerRef = useRef<BrowserQRCodeReader | null>(null);
@@ -81,11 +87,22 @@ export function QrCodeScanner({ onDetected, className }: QrCodeScannerProps) {
     }
   }, [isRunning, onDetected]);
 
+  const startScannerRef = useRef(startScanner);
+  startScannerRef.current = startScanner;
+
   useEffect(() => {
     return () => {
       stopScanner();
     };
   }, [stopScanner]);
+
+  useEffect(() => {
+    if (!autoStart) return;
+    const frame = requestAnimationFrame(() => {
+      void startScannerRef.current();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [autoStart]);
 
   return (
     <div className={cn("space-y-3", className)}>

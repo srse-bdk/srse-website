@@ -1,5 +1,28 @@
 import type { Student } from "@/lib/types/student.type";
 
+const NUMBER_TO_ROMAN: Record<string, string> = {
+  "1": "I",
+  "2": "II",
+  "3": "III",
+  "4": "IV",
+  "5": "V",
+  "6": "VI",
+  "7": "VII",
+  "8": "VIII",
+  "9": "IX",
+  "10": "X",
+  "11": "XI",
+  "12": "XII",
+};
+
+function stripClassPrefix(className: string): string {
+  return className
+    .replace(/^class\s+/i, "")
+    .replace(/^grade\s+/i, "")
+    .replace(/^std\.?\s+/i, "")
+    .trim();
+}
+
 export function abbreviateClassNameForDisplay(className?: string): string {
   const value = String(className || "").trim();
   if (!value) return "";
@@ -9,7 +32,19 @@ export function abbreviateClassNameForDisplay(className?: string): string {
   if (upper === "LKG") return "LKG";
   if (upper === "UKG") return "UKG";
 
-  return upper;
+  const stripped = stripClassPrefix(value);
+  if (!stripped) return upper;
+
+  const strippedUpper = stripped.toUpperCase();
+  if (/^[IVXLCDM]+$/i.test(stripped)) {
+    return strippedUpper;
+  }
+
+  if (/^\d+$/.test(stripped)) {
+    return NUMBER_TO_ROMAN[stripped] || stripped;
+  }
+
+  return strippedUpper;
 }
 
 export function formatClassSectionDisplay(student: Student): string {

@@ -51,6 +51,8 @@ import type {
   User,
   UserUpdateInput,
 } from "@/lib/types/user.type";
+import { isProfileOnlyStaff } from "@/lib/utils/staff-profile";
+import { normalizeBloodGroup } from "@/lib/utils/blood-group";
 
 const editStaffSchema = z.object({
   name: z.string().trim().min(2, "Staff name must be at least 2 characters"),
@@ -292,7 +294,7 @@ export function StaffEditForm() {
       name: staff.name || "",
       phoneNumber: staff.phoneNumber || "",
       gender: staff.gender || "other",
-      bloodGroup: staff.bloodGroup,
+      bloodGroup: normalizeBloodGroup(staff.bloodGroup),
       position: staff.position || "",
       staffType: staff.staffType || "teaching",
       status: staff.status || "active",
@@ -564,6 +566,44 @@ export function StaffEditForm() {
   };
 
   const onSubmit = async (values: EditStaffFormData) => {
+    const profileOnly = isProfileOnlyStaff(staff);
+
+    if (profileOnly) {
+      setIsSaving(true);
+      try {
+        await staffService.update(staffId, {
+          name: values.name.trim(),
+          phoneNumber: values.phoneNumber?.trim() ?? "",
+          ...(normalizeBloodGroup(values.bloodGroup) && {
+            bloodGroup: normalizeBloodGroup(values.bloodGroup),
+          }),
+          position: values.position.trim(),
+        });
+
+        if (
+          profilePicture !== staff?.profilePicture ||
+          profilePictureFileKey !== staff?.profilePictureFileKey
+        ) {
+          if (profilePicture && profilePictureFileKey) {
+            await profilePhotoService.updateStaffProfilePhoto(
+              staffId,
+              profilePicture,
+              profilePictureFileKey,
+            );
+          }
+        }
+
+        toast.success("Staff profile updated successfully.");
+        router.push(`/${role}/staffs?type=non-teaching`);
+      } catch (submitError) {
+        console.error("Error updating staff:", submitError);
+        toast.error("Failed to update staff. Please try again.");
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
     if (!validateNewSubjects()) {
       return;
     }
@@ -575,11 +615,12 @@ export function StaffEditForm() {
 
     setIsSaving(true);
 
+    const normalizedBloodGroup = normalizeBloodGroup(values.bloodGroup);
     const updatePayload: UserUpdateInput = {
       name: values.name.trim(),
       phoneNumber: values.phoneNumber?.trim() ?? "",
       gender: values.gender,
-      bloodGroup: values.bloodGroup,
+      ...(normalizedBloodGroup && { bloodGroup: normalizedBloodGroup }),
       position: values.position.trim(),
       staffType: values.staffType,
       status: values.status,
@@ -712,6 +753,8 @@ export function StaffEditForm() {
     );
   }
 
+  const profileOnly = isProfileOnlyStaff(staff);
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <Button
@@ -726,9 +769,13 @@ export function StaffEditForm() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Edit Staff</CardTitle>
+          <CardTitle>
+            {profileOnly ? "Edit Non-Teaching Staff" : "Edit Staff"}
+          </CardTitle>
           <CardDescription>
-            Update profile details for {staff.name || "this staff account"}.
+            {profileOnly
+              ? "Update ID card details for this profile (no portal login)."
+              : `Update profile details for ${staff.name || "this staff account"}.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -771,7 +818,14 @@ export function StaffEditForm() {
                     Email
                   </FormLabel>
                   <FormControl>
-                    <Input value={staff.email ?? ""} disabled />
+                    <Input
+                      value={
+                        profileOnly
+                          ? "No login — ID card profile only"
+                          : (staff.email ?? "")
+                      }
+                      disabled
+                    />
                   </FormControl>
                 </FormItem>
 
@@ -807,7 +861,14 @@ export function StaffEditForm() {
                         Position
                       </FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Senior Teacher" {...field} />
+                        <Input
+                          placeholder={
+                            profileOnly
+                              ? "e.g., Security Guard, Driver"
+                              : "e.g., Senior Teacher"
+                          }
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -815,6 +876,14 @@ export function StaffEditForm() {
                 />
               </div>
 
+              <BloodGroupFormField
+                control={form.control}
+                name="bloodGroup"
+                label="Blood Group"
+              />
+
+              {!profileOnly ? (
+              <>
               <FormField
                 control={form.control}
                 name="gender"
@@ -837,12 +906,6 @@ export function StaffEditForm() {
                     <FormMessage />
                   </FormItem>
                 )}
-              />
-
-              <BloodGroupFormField
-                control={form.control}
-                name="bloodGroup"
-                label="Blood Group"
               />
 
               <FormField
@@ -1137,6 +1200,8 @@ export function StaffEditForm() {
                   </div>
                 )}
               </div>
+              </>
+              ) : null}
 
               {/* <div className="space-y-4 rounded-lg border p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">

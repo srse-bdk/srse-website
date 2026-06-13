@@ -9,14 +9,18 @@ export interface AttendanceLocation {
   locationId?: string;
 }
 
+export type AttendanceSource = "entry-scanner" | "exit-scanner" | "self-punch";
+
 export interface Attendance extends BaseEntity {
   staffId: string;
   staffName: string;
   date: string; // YYYY-MM-DD format
   punchInTime: number; // Unix timestamp (milliseconds)
   punchOutTime?: number; // Optional, Unix timestamp
-  punchInLocation: AttendanceLocation;
+  punchInLocation?: AttendanceLocation;
   punchOutLocation?: AttendanceLocation;
+  punchInSource?: AttendanceSource;
+  punchOutSource?: AttendanceSource;
   status: AttendanceStatus;
   notes?: string;
   totalHours?: number; // Calculated work hours
@@ -25,7 +29,8 @@ export interface Attendance extends BaseEntity {
 export interface AttendanceInput {
   staffId: string;
   staffName: string;
-  location: AttendanceLocation;
+  location?: AttendanceLocation;
+  source?: AttendanceSource;
 }
 
 export interface AttendanceAnalytics {

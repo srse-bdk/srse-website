@@ -21,7 +21,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -58,20 +58,74 @@ import type { StaffSubjectAssignment, User } from "@/lib/types/user.type";
 const staffSchema = z
   .object({
     name: z.string().min(2, "Staff name must be at least 2 characters"),
-    email: z.string().email("Please enter a valid email address"),
+    email: z.string().optional(),
     phoneNumber: z.string().optional(),
-    gender: z.enum(["male", "female", "other"]),
+    gender: z.enum(["male", "female", "other"]).optional(),
     bloodGroup: z
       .enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"])
       .optional(),
     staffPosition: z.string().min(2, "Position must be at least 2 characters"),
     staffType: z.enum(["teaching", "non-teaching"]),
-    password: z.string().min(8, "Password must be at least 8 characters"),
-    confirmPassword: z.string().min(8, "Please confirm your password"),
+    password: z.string().optional(),
+    confirmPassword: z.string().optional(),
   })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords don't match",
-    path: ["confirmPassword"],
+  .superRefine((data, ctx) => {
+    if (data.staffType === "non-teaching") {
+      if (!data.phoneNumber?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Mobile number is required",
+          path: ["phoneNumber"],
+        });
+      }
+      return;
+    }
+
+    if (!data.email?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please enter a valid email address",
+        path: ["email"],
+      });
+    } else if (!z.string().email().safeParse(data.email.trim()).success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please enter a valid email address",
+        path: ["email"],
+      });
+    }
+
+    if (!data.gender) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Gender is required",
+        path: ["gender"],
+      });
+    }
+
+    if (!data.password || data.password.length < 8) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Password must be at least 8 characters",
+        path: ["password"],
+      });
+    }
+
+    if (!data.confirmPassword || data.confirmPassword.length < 8) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please confirm your password",
+        path: ["confirmPassword"],
+      });
+    }
+
+    if (data.password !== data.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Passwords don't match",
+        path: ["confirmPassword"],
+      });
+    }
   });
 
 type StaffFormData = z.infer<typeof staffSchema>;
@@ -146,7 +200,10 @@ function getErrorCode(error: unknown): string {
 export function StaffForm() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const role = params.role as string;
+  const defaultStaffType =
+    searchParams.get("type") === "non-teaching" ? "non-teaching" : "teaching";
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -247,12 +304,15 @@ export function StaffForm() {
       gender: "male",
       bloodGroup: undefined,
       staffPosition: "",
-      staffType: "teaching",
+      staffType: defaultStaffType,
       password: "",
       confirmPassword: "",
     },
     mode: "onChange",
   });
+
+  const staffType = form.watch("staffType");
+  const isProfileOnlyForm = staffType === "non-teaching";
 
   const getClassOptionsByAcademicYear = (academicYear: string) =>
     classes
@@ -471,6 +531,43 @@ export function StaffForm() {
   const onSubmit = async (data: StaffFormData) => {
     setFormError(null);
 
+    if (data.staffType === "non-teaching") {
+      setIsLoading(true);
+      try {
+        const { userId } = await staffService.createProfileOnly({
+          name: data.name.trim(),
+          phoneNumber: data.phoneNumber?.trim(),
+          bloodGroup: data.bloodGroup,
+          position: data.staffPosition.trim(),
+        });
+
+        if (profilePicture && profilePictureFileKey) {
+          await profilePhotoService.updateStaffProfilePhoto(
+            userId,
+            profilePicture,
+            profilePictureFileKey,
+          );
+        }
+
+        setShowSuccess(true);
+        toast.success("Non-teaching staff profile created successfully.");
+
+        setTimeout(() => {
+          setShowSuccess(false);
+          router.push(`/${role}/staffs?type=non-teaching`);
+        }, 2000);
+      } catch (error: unknown) {
+        console.error("Error creating non-teaching staff:", error);
+        setFormError(
+          "Failed to create staff profile. Please verify all details and try again.",
+        );
+        toast.error("Form submission failed. Please check for errors.");
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     if (!validateNewSubjects()) {
       return;
     }
@@ -485,11 +582,11 @@ export function StaffForm() {
 
       const { userId } = await staffService.create({
         name: data.name,
-        email: data.email,
+        email: data.email!.trim(),
         phoneNumber: data.phoneNumber,
-        password: data.password,
+        password: data.password!,
         role: "staff",
-        gender: data.gender,
+        gender: data.gender!,
         ...(data.bloodGroup && { bloodGroup: data.bloodGroup }),
         position: data.staffPosition,
         staffType: data.staffType,
@@ -621,10 +718,12 @@ export function StaffForm() {
             className="space-y-1"
           >
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Add New Staff
+              {isProfileOnlyForm ? "Add Non-Teaching Staff" : "Add New Staff"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Create a personnel profile and configure access credentials.
+              {isProfileOnlyForm
+                ? "Create an ID card profile only — no portal login or subject assignments."
+                : "Create a personnel profile and configure access credentials."}
             </p>
           </motion.div>
         </header>
@@ -697,30 +796,32 @@ export function StaffForm() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Email Address
-                      </FormLabel>
-                      <FormControl>
-                        <InputGroup className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 rounded-xl transition-all focus-within:ring-2 ring-primary/10">
-                          <InputGroupAddon>
-                            <Mail className="h-4 w-4 text-zinc-400" />
-                          </InputGroupAddon>
-                          <InputGroupInput
-                            placeholder="john@example.com"
-                            {...field}
-                            className="text-sm"
-                          />
-                        </InputGroup>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {!isProfileOnlyForm ? (
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1.5">
+                        <FormLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Email Address
+                        </FormLabel>
+                        <FormControl>
+                          <InputGroup className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 rounded-xl transition-all focus-within:ring-2 ring-primary/10">
+                            <InputGroupAddon>
+                              <Mail className="h-4 w-4 text-zinc-400" />
+                            </InputGroupAddon>
+                            <InputGroupInput
+                              placeholder="john@example.com"
+                              {...field}
+                              className="text-sm"
+                            />
+                          </InputGroup>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
                 <FormField
                   control={form.control}
                   name="phoneNumber"
@@ -728,9 +829,11 @@ export function StaffForm() {
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex justify-between">
                         Phone Number
-                        <span className="font-normal lowercase opacity-60">
-                          Optional
-                        </span>
+                        {!isProfileOnlyForm ? (
+                          <span className="font-normal lowercase opacity-60">
+                            Optional
+                          </span>
+                        ) : null}
                       </FormLabel>
                       <FormControl>
                         <InputGroup className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 rounded-xl transition-all focus-within:ring-2 ring-primary/10">
@@ -749,37 +852,39 @@ export function StaffForm() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="gender"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Gender
-                      </FormLabel>
-                      <FormControl>
-                        <Tabs
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          className="w-full"
-                        >
-                          <TabsList className="h-10 w-full p-1 bg-zinc-100 dark:bg-zinc-800/50 rounded-lg">
-                            {["male", "female", "other"].map((v) => (
-                              <TabsTrigger
-                                key={v}
-                                value={v}
-                                className="flex-1 h-full rounded-md text-[10px] font-bold uppercase tracking-wider data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-primary transition-all"
-                              >
-                                {v}
-                              </TabsTrigger>
-                            ))}
-                          </TabsList>
-                        </Tabs>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {!isProfileOnlyForm ? (
+                  <FormField
+                    control={form.control}
+                    name="gender"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1.5">
+                        <FormLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Gender
+                        </FormLabel>
+                        <FormControl>
+                          <Tabs
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            className="w-full"
+                          >
+                            <TabsList className="h-10 w-full p-1 bg-zinc-100 dark:bg-zinc-800/50 rounded-lg">
+                              {["male", "female", "other"].map((v) => (
+                                <TabsTrigger
+                                  key={v}
+                                  value={v}
+                                  className="flex-1 h-full rounded-md text-[10px] font-bold uppercase tracking-wider data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-700 data-[state=active]:text-primary transition-all"
+                                >
+                                  {v}
+                                </TabsTrigger>
+                              ))}
+                            </TabsList>
+                          </Tabs>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
                 <BloodGroupFormField control={form.control} name="bloodGroup" />
               </div>
             </div>
@@ -797,7 +902,7 @@ export function StaffForm() {
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Designation
+                        {isProfileOnlyForm ? "Role on ID Card" : "Designation"}
                       </FormLabel>
                       <FormControl>
                         <InputGroup className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 rounded-xl transition-all focus-within:ring-2 ring-primary/10">
@@ -805,7 +910,11 @@ export function StaffForm() {
                             <Briefcase className="h-4 w-4 text-zinc-400" />
                           </InputGroupAddon>
                           <InputGroupInput
-                            placeholder="e.g., Senior Teacher"
+                            placeholder={
+                              isProfileOnlyForm
+                                ? "e.g., Security Guard, Driver"
+                                : "e.g., Senior Teacher"
+                            }
                             {...field}
                             className="text-sm"
                           />
@@ -852,7 +961,8 @@ export function StaffForm() {
               </div>
             </div>
 
-            {/* Subject Section */}
+            {/* Subject Section — teaching staff only */}
+            {!isProfileOnlyForm ? (
             <div className="space-y-5">
               <SectionHeader
                 title="Subject Assignment"
@@ -1383,8 +1493,10 @@ export function StaffForm() {
                 </div>
               </div>
             </div>
+            ) : null}
 
-            {/* Security Section */}
+            {/* Security Section — teaching staff only */}
+            {!isProfileOnlyForm ? (
             <div className="space-y-5">
               <SectionHeader
                 title="Authentication"
@@ -1480,6 +1592,7 @@ export function StaffForm() {
                 </p>
               </div>
             </div>
+            ) : null}
 
             {/* Form Footer */}
             <div className="pt-6 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-end gap-3">

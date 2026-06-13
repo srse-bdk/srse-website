@@ -1,4 +1,5 @@
 import {
+  ArrowRightLeft,
   Award,
   Baby,
   BadgeIndianRupee,
@@ -8,13 +9,17 @@ import {
   Briefcase,
   Calendar,
   CalendarClock,
+  CalendarDays,
+  ClipboardList,
   Clock,
   CreditCard,
   FileCheck,
   FileText,
   GraduationCap,
   Home,
+  LogIn,
   List,
+  LogOut,
   Printer,
   ScanLine,
   Settings,
@@ -67,6 +72,18 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     ],
   },
   {
+    title: "Leave Management",
+    icon: CalendarDays,
+    roles: ["admin"],
+    subItems: [
+      { title: "Overview", url: "/leave", icon: CalendarDays },
+      { title: "School Calendar", url: "/leave/calendar", icon: Calendar },
+      { title: "Leave Types", url: "/leave/types", icon: BookText },
+      { title: "Applications", url: "/leave/applications", icon: ClipboardList },
+      { title: "Convert Absences", url: "/leave/convert", icon: ArrowRightLeft },
+    ],
+  },
+  {
     title: "Students",
     icon: GraduationCap,
     roles: ["admin"],
@@ -114,10 +131,13 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     roles: ["admin"],
   },
   {
-    title: "Gate Scanner",
-    url: "/scanner",
+    title: "Gate Scanners",
     icon: ScanLine,
     roles: ["admin"],
+    subItems: [
+      { title: "Entry Scanner", url: "/scanner/entry", icon: LogIn },
+      { title: "Exit Scanner", url: "/scanner/exit", icon: LogOut },
+    ],
   },
   {
     title: "ID Card Data",
@@ -195,6 +215,12 @@ function buildStaffNavigation(userId?: string): NavigationItem[] {
       title: "My Attendance",
       url: "/attendance",
       icon: Clock,
+      roles: ["staff"],
+    },
+    {
+      title: "My Leave",
+      url: "/leave",
+      icon: CalendarDays,
       roles: ["staff"],
     },
   ];

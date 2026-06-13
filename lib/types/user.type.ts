@@ -14,6 +14,8 @@ export interface StaffSubjectAssignment {
 }
 
 export interface User extends BaseEntity {
+  /** When false, staff exists for ID cards only (no portal login). */
+  hasLogin?: boolean;
   uid: string;
   scanId?: string;
   name: string;
@@ -40,6 +42,14 @@ export interface User extends BaseEntity {
   currentSection?: string;
   /** Set when ID card was bulk-printed (phased print tracking). */
   idCardPrintedAt?: string;
+}
+
+export interface ProfileOnlyStaffInput {
+  name: string;
+  phoneNumber?: string;
+  bloodGroup?: BloodGroup;
+  position: string;
+  scanId?: string;
 }
 
 // Input types for user creation

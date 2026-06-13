@@ -34,7 +34,9 @@ import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import { staffService, studentService } from "@/lib/services";
 import {
   DEFAULT_ACADEMIC_YEAR,
+  getIdCardLayout,
   ID_CARD_PRINT_PAGE_STYLE,
+  type IdCardOrientation,
 } from "@/lib/config/id-card";
 import { DEFAULT_ID_CARD_THEME_ID } from "@/lib/config/id-card-themes";
 import type { IdCardSettings } from "@/lib/types/id-card-settings.type";
@@ -80,6 +82,8 @@ export default function IdCardPrintPage() {
   const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [markAsPrintedAfterExport, setMarkAsPrintedAfterExport] = useState(true);
   const [isMarkingPrinted, setIsMarkingPrinted] = useState(false);
+  const [cardOrientation, setCardOrientation] =
+    useState<IdCardOrientation>("landscape");
 
   const {
     data: studentsData,
@@ -274,14 +278,16 @@ export default function IdCardPrintPage() {
   };
 
   const studentPages = useMemo(
-    () => chunkIdCardPages(filteredStudents),
-    [filteredStudents],
+    () => chunkIdCardPages(filteredStudents, cardOrientation),
+    [filteredStudents, cardOrientation],
   );
 
   const staffPages = useMemo(
-    () => chunkIdCardPages(filteredStaff),
-    [filteredStaff],
+    () => chunkIdCardPages(filteredStaff, cardOrientation),
+    [filteredStaff, cardOrientation],
   );
+
+  const cardsPerSheet = getIdCardLayout(cardOrientation).cardsPerPage;
 
   const previewStudent = useMemo(() => {
     if (printMode === "single" && selectedStudentId) {
@@ -472,6 +478,30 @@ export default function IdCardPrintPage() {
             </TabsList>
 
             <div className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label>Card layout</Label>
+                <RadioGroup
+                  value={cardOrientation}
+                  onValueChange={(value) =>
+                    setCardOrientation(value as IdCardOrientation)
+                  }
+                  className="flex flex-wrap gap-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="landscape" id="layout-landscape" />
+                    <Label htmlFor="layout-landscape" className="font-normal">
+                      Landscape (8 per A4 sheet)
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="portrait" id="layout-portrait" />
+                    <Label htmlFor="layout-portrait" className="font-normal">
+                      Portrait (9 per A4 sheet)
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
               <div className="space-y-2">
                 <Label>Print mode</Label>
                 <RadioGroup
@@ -683,7 +713,8 @@ export default function IdCardPrintPage() {
               </Button>
             ) : null}
             <p className="text-sm text-muted-foreground">
-              {currentCount} card(s) · {currentPages} sheet(s)
+              {currentCount} card(s) · {currentPages} sheet(s) ·{" "}
+              {cardOrientation} · {cardsPerSheet}/sheet
             </p>
           </div>
         </CardContent>
@@ -696,6 +727,7 @@ export default function IdCardPrintPage() {
         previewStudent={previewStudent}
         previewStaff={previewStaff}
         previewLabel={previewLabel}
+        orientation={cardOrientation}
         onAcademicYearChange={setAcademicYear}
       />
 
@@ -721,6 +753,7 @@ export default function IdCardPrintPage() {
             themeId={themeId}
             academicYear={academicYear}
             principalSignatureUrl={principalSignatureUrl}
+            orientation={cardOrientation}
             singleCard={isSingleCard}
           />
         ) : (
@@ -730,6 +763,7 @@ export default function IdCardPrintPage() {
             themeId={themeId}
             academicYear={academicYear}
             principalSignatureUrl={principalSignatureUrl}
+            orientation={cardOrientation}
             singleCard={isSingleCard}
           />
         )}

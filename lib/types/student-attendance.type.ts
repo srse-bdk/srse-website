@@ -11,6 +11,10 @@ export interface StudentAttendance extends BaseEntity {
   status: StudentAttendanceStatus;
   markedBy: string; // Staff/Admin user ID who marked it
   markedAt: number; // Unix timestamp (milliseconds)
+  /** Gate entry scanner timestamp */
+  arrivalTime?: number;
+  /** Gate exit scanner timestamp */
+  dismissalTime?: number;
   notes?: string; // Optional notes
 }
 
@@ -22,6 +26,7 @@ export interface StudentAttendanceInput {
   date: string; // YYYY-MM-DD format
   status: StudentAttendanceStatus;
   notes?: string;
+  arrivalTime?: number;
 }
 
 export interface BulkAttendanceInput {
@@ -39,6 +44,8 @@ export interface BulkAttendanceInput {
 export interface StudentAttendanceUpdateInput {
   status?: StudentAttendanceStatus;
   notes?: string;
+  arrivalTime?: number;
+  dismissalTime?: number;
 }
 
 export interface StudentAttendanceAnalytics {

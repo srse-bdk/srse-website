@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DEFAULT_ACADEMIC_YEAR } from "@/lib/config/id-card";
+import { DEFAULT_ACADEMIC_YEAR, type IdCardOrientation } from "@/lib/config/id-card";
 import { DEFAULT_ID_CARD_THEME_ID } from "@/lib/config/id-card-themes";
 import type { Student } from "@/lib/types/student.type";
 import type { User } from "@/lib/types/user.type";
@@ -27,6 +27,7 @@ interface IdCardThemePickerProps {
   previewStudent: Student;
   previewStaff: User;
   previewLabel?: string;
+  orientation?: IdCardOrientation;
   onAcademicYearChange: (year: string) => void;
 }
 
@@ -37,6 +38,7 @@ export function IdCardThemePicker({
   previewStudent,
   previewStaff,
   previewLabel,
+  orientation = "landscape",
   onAcademicYearChange,
 }: IdCardThemePickerProps) {
   const [savingYear, setSavingYear] = useState(false);
@@ -99,13 +101,18 @@ export function IdCardThemePicker({
             ) : null}
           </div>
           <div className="overflow-x-auto rounded-lg border bg-muted/30 p-6">
-            <div className="inline-block origin-top-left scale-[1.45]">
+            <div
+              className={`inline-block origin-top-left ${
+                orientation === "portrait" ? "scale-[1.25]" : "scale-[1.45]"
+              }`}
+            >
               {previewKind === "student" ? (
                 <StudentIdCard
                   student={previewStudent}
                   themeId={themeId}
                   academicYear={academicYear || DEFAULT_ACADEMIC_YEAR}
                   principalSignatureUrl={principalSignatureUrl}
+                  orientation={orientation}
                 />
               ) : (
                 <StaffIdCard
@@ -113,6 +120,7 @@ export function IdCardThemePicker({
                   themeId={themeId}
                   academicYear={academicYear || DEFAULT_ACADEMIC_YEAR}
                   principalSignatureUrl={principalSignatureUrl}
+                  orientation={orientation}
                 />
               )}
             </div>
