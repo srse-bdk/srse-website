@@ -8,7 +8,7 @@ export type RoleAccessContext = {
 
 export function getDefaultRouteForRole(role: UserRole): string {
   if (role === "scanner") {
-    return "/gate/entry";
+    return "/gate";
   }
   return `/${role}/dashboard`;
 }

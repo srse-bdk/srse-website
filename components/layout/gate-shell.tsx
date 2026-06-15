@@ -20,7 +20,7 @@ export function GateShell({ children }: { children: React.ReactNode }) {
       }
       const { firebaseAuth } = await import("@atechhub/firebase");
       await firebaseAuth({ action: "logout" });
-      router.push("/signin?next=/gate/entry");
+      router.push("/signin?next=/gate");
     } catch (error) {
       console.error("Logout error:", error);
     }
