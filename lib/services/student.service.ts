@@ -15,11 +15,61 @@ import {
 import type { Enrollment } from "@/lib/types/enrollment.type";
 import type { Class } from "@/lib/types/class.type";
 import { ensureUniqueScanId, generateUniqueScanId } from "@/lib/utils/scan-id";
+import {
+  buildStudentImportMatchIndexes,
+  findDuplicateStudentMatch,
+  type StudentDuplicateMatchReason,
+} from "@/lib/utils/students-import-export";
 import { getArrFromObj } from "@ashirbad/js-core";
 import { createUser, deleteUser, mutate } from "@atechhub/firebase";
 import { enrollmentService } from "./enrollment.service";
 
 class StudentService {
+  private duplicateErrorMessage(
+    reason: StudentDuplicateMatchReason,
+    data: Partial<StudentInput>,
+    existing?: Student | null,
+  ): string {
+    switch (reason) {
+      case "pen":
+        return "Student PEN already exists";
+      case "admission":
+        return "Admission number already exists";
+      case "scanId":
+        return "Scan ID already exists";
+      case "nameClassSection": {
+        const name =
+          `${data.firstName || ""} ${data.lastName || ""}`.trim() ||
+          existing?.fullName ||
+          "This student";
+        const cls = data.currentClass || existing?.currentClass || "";
+        const section = data.currentSection || existing?.currentSection || "";
+        const location = [cls, section].filter(Boolean).join(" ");
+        return location
+          ? `A student named "${name}" already exists in ${location}`
+          : `A student named "${name}" already exists`;
+      }
+    }
+  }
+
+  private async assertUniqueStudent(
+    data: Partial<StudentInput>,
+    excludeId?: string,
+  ): Promise<void> {
+    const students = await this.getAll();
+    const pool = excludeId
+      ? students.filter((student) => student.id !== excludeId)
+      : students;
+    const indexes = buildStudentImportMatchIndexes(pool);
+    const match = findDuplicateStudentMatch(data, indexes);
+    if (!match) return;
+
+    const existing = students.find((student) => student.id === match.studentId);
+    throw new Error(
+      this.duplicateErrorMessage(match.reason, data, existing),
+    );
+  }
+
   /**
    * Create a new student
    */
@@ -32,13 +82,7 @@ class StudentService {
     let studentAuthUid: string | null = null;
     let studentAuthEmail: string | null = null;
 
-    // Check if admission number already exists
-    if (data.admissionNumber) {
-      const existing = await this.getByAdmissionNumber(data.admissionNumber);
-      if (existing) {
-        throw new Error("Admission number already exists");
-      }
-    }
+    await this.assertUniqueStudent({ ...data, pen: pen || data.pen, scanId });
 
     // Validate guardians if provided
     if (data.guardians && data.guardians.length > 0) {
@@ -287,12 +331,33 @@ class StudentService {
   async update(id: string, data: StudentUpdateInput): Promise<void> {
     const nowISO = new Date().toISOString();
 
-    // If admission number is being updated, check uniqueness
-    if (data.admissionNumber) {
-      const existing = await this.getByAdmissionNumber(data.admissionNumber);
-      if (existing && existing.id !== id) {
-        throw new Error("Admission number already exists");
+    const duplicateRelevant =
+      data.admissionNumber !== undefined ||
+      data.firstName !== undefined ||
+      data.lastName !== undefined ||
+      data.currentClass !== undefined ||
+      data.currentSection !== undefined ||
+      data.pen !== undefined ||
+      data.scanId !== undefined;
+
+    if (duplicateRelevant) {
+      const current = await this.getById(id);
+      if (!current) {
+        throw new Error("Student not found");
       }
+
+      await this.assertUniqueStudent(
+        {
+          admissionNumber: data.admissionNumber ?? current.admissionNumber,
+          firstName: data.firstName ?? current.firstName,
+          lastName: data.lastName ?? current.lastName,
+          currentClass: data.currentClass ?? current.currentClass,
+          currentSection: data.currentSection ?? current.currentSection,
+          pen: data.pen ?? current.pen,
+          scanId: data.scanId ?? current.scanId,
+        },
+        id,
+      );
     }
 
     // If name fields are updated, recompute fullName

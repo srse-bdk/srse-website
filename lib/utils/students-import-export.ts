@@ -733,33 +733,48 @@ export function registerStudentInImportIndexes(
   }
 }
 
-export function findExistingStudentIdForImport(
+export type StudentDuplicateMatchReason =
+  | "pen"
+  | "admission"
+  | "scanId"
+  | "nameClassSection";
+
+export function findDuplicateStudentMatch(
   student: Partial<StudentInput>,
   indexes: StudentImportMatchIndexes,
-): string | undefined {
+): { studentId: string; reason: StudentDuplicateMatchReason } | null {
   const penKey = parsePenFromImport(student.pen || "");
   if (penKey) {
     const byPen = indexes.byPen.get(penKey);
-    if (byPen) return byPen;
+    if (byPen) return { studentId: byPen, reason: "pen" };
   }
 
   const admissionKey = (student.admissionNumber || "").trim().toLowerCase();
   if (admissionKey) {
     const byAdmission = indexes.byAdmission.get(admissionKey);
-    if (byAdmission) return byAdmission;
+    if (byAdmission) return { studentId: byAdmission, reason: "admission" };
   }
 
   const scanKey = (student.scanId || "").trim().toUpperCase();
   if (scanKey) {
     const byScanId = indexes.byScanId.get(scanKey);
-    if (byScanId) return byScanId;
+    if (byScanId) return { studentId: byScanId, reason: "scanId" };
   }
 
   const nameClassSectionKey = getNameClassSectionKey(student);
   if (nameClassSectionKey) {
     const byNameClassSection = indexes.byNameClassSection.get(nameClassSectionKey);
-    if (byNameClassSection) return byNameClassSection;
+    if (byNameClassSection) {
+      return { studentId: byNameClassSection, reason: "nameClassSection" };
+    }
   }
 
-  return undefined;
+  return null;
+}
+
+export function findExistingStudentIdForImport(
+  student: Partial<StudentInput>,
+  indexes: StudentImportMatchIndexes,
+): string | undefined {
+  return findDuplicateStudentMatch(student, indexes)?.studentId;
 }

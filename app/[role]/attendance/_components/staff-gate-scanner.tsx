@@ -64,6 +64,9 @@ type ResolvedPerson =
       currentSection?: string;
     };
 
+/** How long success/warning/error result stays visible before the camera restarts. */
+const SCAN_RESULT_DISPLAY_MS = 3000;
+
 const MODE_CONFIG = {
   entry: {
     title: "Entry Scanner",
@@ -497,7 +500,7 @@ export function GateScanner({ mode }: GateScannerProps) {
     const timer = window.setTimeout(() => {
       setAutoStartAfterVerify(true);
       setScanResult(null);
-    }, 1500);
+    }, SCAN_RESULT_DISPLAY_MS);
     return () => window.clearTimeout(timer);
   }, [scanResult]);
 
