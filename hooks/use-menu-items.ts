@@ -39,6 +39,8 @@ export type NavigationSubItem = {
   title: string;
   url: string;
   icon?: React.ElementType;
+  /** When set, used as-is instead of `/{role}{url}` */
+  fullPath?: string;
 };
 
 export type NavigationItem = {
@@ -46,6 +48,8 @@ export type NavigationItem = {
   url?: string;
   icon: React.ElementType;
   roles: UserRole[];
+  /** When set, used as-is instead of `/{role}{url}` */
+  fullPath?: string;
   subItems?: NavigationSubItem[];
 };
 
@@ -134,9 +138,11 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     title: "Gate Scanners",
     icon: ScanLine,
     roles: ["admin"],
+    fullPath: "/gate",
     subItems: [
-      { title: "Entry Scanner", url: "/scanner/entry", icon: LogIn },
-      { title: "Exit Scanner", url: "/scanner/exit", icon: LogOut },
+      { title: "Scanner hub", url: "/gate", fullPath: "/gate", icon: ScanLine },
+      { title: "Entry Scanner", url: "/gate/entry", fullPath: "/gate/entry", icon: LogIn },
+      { title: "Exit Scanner", url: "/gate/exit", fullPath: "/gate/exit", icon: LogOut },
     ],
   },
   {
@@ -300,16 +306,17 @@ const PARENT_NAVIGATION: NavigationItem[] = [
 
 export function useMenuItems() {
   const user = useAppStore((state) => state.user);
-  const role = user?.role ?? "admin";
+  const role = user?.role;
 
   const navigationItems = useMemo(() => {
+    if (!role) return [];
     switch (role) {
       case "admin":
         return ADMIN_NAVIGATION;
       case "staff":
-        return buildStaffNavigation(user?.uid);
+        return buildStaffNavigation(user.uid);
       case "student":
-        return buildStudentNavigation(user?.studentId);
+        return buildStudentNavigation(user.studentId);
       case "parent":
         return PARENT_NAVIGATION;
       default:

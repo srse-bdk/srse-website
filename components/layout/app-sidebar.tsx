@@ -17,8 +17,9 @@ import {
   SidebarMenuButton,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
-import { useMenuItems } from "@/hooks/use-menu-items";
+import { useMenuItems, type NavigationSubItem } from "@/hooks/use-menu-items";
 import type { UserRole } from "@/lib/types/user.type";
+import { clearScannerLoginSessionFlag } from "@/lib/services/scanner-login-notification.service";
 import { SidebarMenuItem } from "@/components/ui/sidebar-menu-item";
 import { SidebarSubmenu } from "@/components/ui/sidebar-submenu";
 import { cn } from "@/lib/utils";
@@ -106,6 +107,20 @@ function isPathActive(pathname: string, href: string, currentSearchParams?: stri
   return false;
 }
 
+function resolveNavHref(
+  role: UserRole,
+  url?: string,
+  fullPath?: string,
+): string {
+  if (fullPath) return fullPath;
+  if (!url) return "#";
+  return `/${role}${url}`;
+}
+
+function resolveSubHref(role: UserRole, sub: NavigationSubItem): string {
+  return sub.fullPath || `/${role}${sub.url}`;
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -153,11 +168,14 @@ export function AppSidebar() {
 
   const handleLogout = async () => {
     try {
+      const { useAppStore } = await import("@/hooks/use-app-store");
+      const uid = useAppStore.getState().user?.uid;
+      if (uid) clearScannerLoginSessionFlag(uid);
       const { firebaseAuth } = await import("@atechhub/firebase");
       await firebaseAuth({
         action: "logout",
       });
-      router.push("/");
+      router.push("/signin");
     } catch (error) {
       console.error("Logout error:", error);
     }
@@ -225,7 +243,7 @@ export function AppSidebar() {
                       (a, b) => b.url.length - a.url.length
                     );
                     const activeSubItem = sortedSubItems.find((subItem) => {
-                      const subHref = `/${role}${subItem.url}`;
+                      const subHref = resolveSubHref(role, subItem);
                       return isPathActive(pathname, subHref, currentSearchParamsString);
                     });
                     const hasActiveSubItem = !!activeSubItem;
@@ -237,7 +255,7 @@ export function AppSidebar() {
                           icon={item.icon as React.ElementType}
                           items={item.subItems.map((sub) => ({
                             title: sub.title,
-                            url: `/${role}${sub.url}`,
+                            url: resolveSubHref(role, sub),
                             icon: sub.icon as React.ElementType | undefined,
                           }))}
                           isOpen={isOpen}
@@ -251,7 +269,7 @@ export function AppSidebar() {
                   }
 
                   // Regular menu item without sub-items
-                  const href = item.url ? `/${role}${item.url}` : "#";
+                  const href = resolveNavHref(role, item.url, item.fullPath);
                   const isActive = item.url
                     ? isPathActive(pathname, href, currentSearchParamsString)
                     : false;

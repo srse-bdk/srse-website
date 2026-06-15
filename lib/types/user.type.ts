@@ -4,7 +4,7 @@ import type { BloodGroup } from "./student.type";
 // Status types
 export type Status = "active" | "inactive";
 export type UserStatus = "active" | "inactive" | "pending";
-export type UserRole = "admin" | "staff" | "parent" | "student";
+export type UserRole = "admin" | "staff" | "parent" | "student" | "scanner";
 
 export interface StaffSubjectAssignment {
   subjectId: string;

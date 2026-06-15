@@ -15,3 +15,5 @@ export * from "./school-calendar.service";
 export * from "./staff-leave.service";
 export * from "./staff-leave-accrual.service";
 export * from "./student-gate-notification.service";
+export * from "./scanner-user.service";
+export * from "./scanner-login-notification.service";

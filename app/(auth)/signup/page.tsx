@@ -1,66 +1,38 @@
 "use client";
 
-import { firebaseAuth, mutate } from "@atechhub/firebase";
-import { AuthForm, type AuthFormData } from "../_components/auth-form";
+import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export default function SignUpPage() {
-  const handleEmailSignUp = async (data: AuthFormData) => {
-    try {
-      const res = await firebaseAuth({
-        action: "signup",
-        email: data.email,
-        password: data.password,
-      });
-      console.log(res);
-      const userId = res.user.uid;
-      const user = await mutate({
-        action: "create",
-        path: `users/${userId}`,
-        data: {
-          email: data.email,
-          name: data.name,
-          password: data.password,
-          role: "user",
-          status: "active",
-        },
-      });
-      console.log(user);
-    } catch (error) {
-      console.error("Signup error:", error);
+  const router = useRouter();
 
-      // Handle specific Firebase errors
-      if (error instanceof Error) {
-        if (error.message.includes("email-already-in-use")) {
-          throw new Error(
-            "This email is already registered. Please sign in instead."
-          );
-        }
-        if (error.message.includes("weak-password")) {
-          throw new Error(
-            "Password is too weak. Please use a stronger password."
-          );
-        }
-        if (error.message.includes("invalid-email")) {
-          throw new Error("Please enter a valid email address.");
-        }
-        // Re-throw the original error if it has a user-friendly message
-        throw error;
-      }
-
-      throw new Error("Failed to create account. Please try again.");
-    }
-  };
+  useEffect(() => {
+    router.replace("/");
+  }, [router]);
 
   return (
-    <AuthForm
-      title="Create an account"
-      description="Sign up to get started with your account"
-      submitText="Sign up"
-      onSubmit={handleEmailSignUp}
-      showNameField={true}
-      footerText="Already have an account?"
-      footerLinkText="Sign in"
-      footerLinkHref="/signin"
-    />
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle>Registration closed</CardTitle>
+        <CardDescription>
+          New accounts can only be created by school administrators. Please
+          contact the school office if you need access.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button asChild className="w-full">
+          <Link href="/">Back to website</Link>
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

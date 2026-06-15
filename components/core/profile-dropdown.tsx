@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/hooks/use-app-store";
+import { clearScannerLoginSessionFlag } from "@/lib/services/scanner-login-notification.service";
 import { LogOut, Settings } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 
@@ -25,6 +26,9 @@ export function ProfileDropdown() {
 
   const handleLogout = async () => {
     try {
+      if (user?.uid) {
+        clearScannerLoginSessionFlag(user.uid);
+      }
       const { firebaseAuth } = await import("@atechhub/firebase");
       await firebaseAuth({
         action: "logout",

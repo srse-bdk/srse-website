@@ -1,11 +1,14 @@
 "use client";
 
-import { GateScanner } from "../../attendance/_components/staff-gate-scanner";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-export default function EntryScannerPage() {
-  return (
-    <div className="p-4 sm:p-6">
-      <GateScanner mode="entry" />
-    </div>
-  );
+export default function LegacyEntryScannerRedirectPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/gate/entry");
+  }, [router]);
+
+  return null;
 }

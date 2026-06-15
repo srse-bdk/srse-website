@@ -5,13 +5,13 @@ import { mutate } from "@atechhub/firebase";
 import type { User } from "@/lib/types/user.type";
 import { normalizePen } from "@/lib/utils/student-login";
 import { AuthForm, type AuthFormData } from "../_components/auth-form";
+
 export default function SignInPage() {
   const handleEmailSignIn = async (data: AuthFormData) => {
     try {
       const loginIdentifier = data.email.trim();
       let loginEmail = loginIdentifier;
 
-      // Allow students to sign in with PEN number instead of email.
       if (!loginIdentifier.includes("@")) {
         const allUsers = (await mutate({
           action: "get",
@@ -34,16 +34,14 @@ export default function SignInPage() {
         loginEmail = studentUser.email;
       }
 
-      const res = await firebaseAuth({
+      await firebaseAuth({
         action: "login",
         email: loginEmail,
         password: data.password,
       });
-      console.log(res);
     } catch (error) {
       console.error("Signin error:", error);
 
-      // Handle specific Firebase errors
       if (error instanceof Error) {
         if (
           error.message.includes("user-not-found") ||
@@ -61,7 +59,6 @@ export default function SignInPage() {
             "This account has been disabled. Please contact support.",
           );
         }
-        // Re-throw the original error if it has a user-friendly message
         throw error;
       }
 
@@ -72,13 +69,10 @@ export default function SignInPage() {
   return (
     <AuthForm
       title="Welcome back"
-      description="Sign in to your account to continue"
+      description="Sign in with credentials issued by the school. Public registration is not available."
       submitText="Sign in"
       onSubmit={handleEmailSignIn}
       allowIdentifierLogin={true}
-      footerText="Don't have an account?"
-      footerLinkText="Sign up"
-      footerLinkHref="/signup"
     />
   );
 }

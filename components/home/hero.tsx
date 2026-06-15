@@ -193,7 +193,7 @@ export function Hero() {
                 className="h-14 px-8 text-lg rounded-full shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 bg-gradient-to-r from-primary to-primary/90"
                 asChild
               >
-                <Link href="/signup">
+                <Link href="/contact">
                   Enroll Now <ArrowRight className="ml-2 size-5" />
                 </Link>
               </Button>

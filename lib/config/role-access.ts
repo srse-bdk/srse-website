@@ -1,3 +1,4 @@
+import { canAccessGate, isGatePath } from "@/lib/config/auth-routes";
 import type { UserRole } from "@/lib/types/user.type";
 
 export type RoleAccessContext = {
@@ -6,6 +7,9 @@ export type RoleAccessContext = {
 };
 
 export function getDefaultRouteForRole(role: UserRole): string {
+  if (role === "scanner") {
+    return "/gate/entry";
+  }
   return `/${role}/dashboard`;
 }
 
@@ -64,6 +68,8 @@ const STAFF_ROUTE_PATTERNS = [
   "/staffs/:staffId/time-table",
 ];
 
+const SCANNER_ROUTE_PATTERNS = ["/scanner", "/scanner/entry", "/scanner/exit"];
+
 function matchesAnyPattern(patterns: string[], path: string): boolean {
   return patterns.some((pattern) => matchesRoute(pattern, path));
 }
@@ -78,6 +84,10 @@ export function canRoleAccessPath(
   }
 
   const path = pathSuffix || "/dashboard";
+
+  if (role === "scanner") {
+    return matchesAnyPattern(SCANNER_ROUTE_PATTERNS, path);
+  }
 
   if (role === "parent") {
     return matchesAnyPattern(PARENT_ROUTE_PATTERNS, path);
@@ -117,4 +127,22 @@ export function canRoleAccessPath(
   }
 
   return false;
+}
+
+export function canUserAccessPathname(
+  role: UserRole,
+  pathname: string,
+  context: RoleAccessContext = {},
+): boolean {
+  if (canAccessGate(role) && isGatePath(pathname)) {
+    return true;
+  }
+
+  const urlRole = pathname.split("/")[1] as UserRole;
+  if (urlRole !== role) {
+    return false;
+  }
+
+  const pathSuffix = getRolePathSuffix(pathname, role);
+  return canRoleAccessPath(role, pathSuffix, context);
 }
