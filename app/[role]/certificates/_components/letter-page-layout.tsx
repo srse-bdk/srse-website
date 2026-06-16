@@ -92,7 +92,10 @@ export function LetterPageLayout({
         </div>
       </div>
 
-      <div style={{ position: "absolute", left: "-9999px", top: 0 }}>
+      <div
+        className="print-root"
+        style={{ position: "absolute", left: "-9999px", top: 0 }}
+      >
         <div ref={printRef}>{hiddenPrintContent}</div>
       </div>
     </div>

@@ -35,10 +35,14 @@ export const TermsConditionsLetterPreview = forwardRef<
       schoolLogo={data.schoolLogo}
       isPrint={isPrint}
     >
-      <div className="space-y-5">
+      <div className={isPrint ? "space-y-3" : "space-y-5"}>
         <p className="font-bold">Terms &amp; Conditions:</p>
 
-        <ul className="list-disc space-y-4 pl-6">
+        <ul
+          className={`list-disc pl-6 ${
+            isPrint ? "space-y-2 text-[10.5pt]" : "space-y-4"
+          }`}
+        >
           {defaultTermsConditionsBullets.map((item, index) => (
             <li key={item.title}>
               <strong>{item.title}:</strong> {bullets[index]}
@@ -46,14 +50,18 @@ export const TermsConditionsLetterPreview = forwardRef<
           ))}
         </ul>
 
-        <p className="pt-2">
+        <p className={isPrint ? "pt-1" : "pt-2"}>
           By continuing your employment, you acknowledge that you have read,
           understood, and agree to these terms.
         </p>
 
-        <div className="mt-10 space-y-8">
+        <div className={isPrint ? "mt-4 space-y-5" : "mt-10 space-y-8"}>
           <div>
-            <p className="mb-8 border-b border-dotted border-gray-500 pb-1">
+            <p
+              className={`border-b border-dotted border-gray-500 pb-1 ${
+                isPrint ? "mb-4" : "mb-8"
+              }`}
+            >
               {data.employeeName || "\u00A0"}
             </p>
             <p className="text-[10pt] text-gray-600">Name</p>

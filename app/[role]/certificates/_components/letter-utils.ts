@@ -35,23 +35,57 @@ export function getDearName(
   return `Dear ${first}`;
 }
 
+/** A4 print: no @page margin — padding lives inside each letter sheet. */
 export const letterPrintPageStyle = `
   @page {
-    margin: 12mm;
-    size: A4;
+    margin: 0;
+    size: A4 portrait;
   }
   @media print {
-    body {
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     .letter-print-page {
+      width: 210mm;
+      height: 297mm;
+      min-height: 297mm;
+      max-height: 297mm;
+      overflow: hidden;
       page-break-after: always;
       break-after: page;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      box-sizing: border-box;
     }
     .letter-print-page:last-child {
       page-break-after: auto;
       break-after: auto;
+    }
+    .letter-print-inner {
+      height: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 10mm 12mm 8mm;
+      box-sizing: border-box;
+    }
+    .letter-print-main {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .letter-print-footer {
+      flex-shrink: 0;
+      margin-top: auto;
+    }
+    .print-root {
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .print-root > * {
+      margin: 0 !important;
     }
   }
 `;

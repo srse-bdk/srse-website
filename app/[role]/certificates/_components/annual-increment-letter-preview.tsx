@@ -28,7 +28,7 @@ export const AnnualIncrementLetterPreview = forwardRef<
       schoolLogo={data.schoolLogo}
       isPrint={isPrint}
     >
-      <div className="space-y-4">
+      <div className={isPrint ? "space-y-2.5" : "space-y-4"}>
         <p>{letterDate}</p>
 
         <div className="space-y-0.5">
@@ -84,6 +84,7 @@ export const AnnualIncrementLetterPreview = forwardRef<
         <SignatoryBlock
           signatoryName={data.signatoryName}
           signatoryTitle={data.signatoryTitle}
+          compact={isPrint}
         />
       </div>
     </SchoolLetterhead>
