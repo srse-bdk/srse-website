@@ -16,12 +16,20 @@ export function formatLetterDate(
   }
 }
 
-export function formatSalaryInr(amount: number): string {
+export function formatSalaryInr(amount?: number | null): string {
+  if (amount == null || Number.isNaN(amount)) {
+    return "INR ________";
+  }
   return `INR ${amount.toLocaleString("en-IN")}`;
 }
 
-export function getDearName(name: string, gender: "male" | "female" | "other") {
-  const first = name.trim().split(/\s+/)[0] || name;
+export function getDearName(
+  name: string | undefined,
+  gender: "male" | "female" | "other",
+) {
+  const trimmed = name?.trim();
+  if (!trimmed) return "Dear ________";
+  const first = trimmed.split(/\s+/)[0] || trimmed;
   if (gender === "male") return `Dear Mr. ${first}`;
   if (gender === "female") return `Dear ${first}`;
   return `Dear ${first}`;

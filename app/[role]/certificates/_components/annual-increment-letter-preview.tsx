@@ -50,7 +50,7 @@ export const AnnualIncrementLetterPreview = forwardRef<
           <li>
             You will receive a monthly consolidated salary of{" "}
             <strong>{formatSalaryInr(data.revisedSalary)}</strong> effective from{" "}
-            <strong>{effectiveDate}</strong>.
+            <strong>{effectiveDate || "________"}</strong>.
           </li>
         </ul>
 
