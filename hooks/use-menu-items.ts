@@ -161,7 +161,22 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     roles: ["admin"],
     subItems: [
       {
-        title: "Experience Certificate",
+        title: "Compensation Package",
+        url: "/certificates/compensation-package",
+        icon: FileText,
+      },
+      {
+        title: "Annual Increment",
+        url: "/certificates/annual-increment",
+        icon: TrendingUp,
+      },
+      {
+        title: "Terms & Conditions",
+        url: "/certificates/terms-conditions",
+        icon: ClipboardList,
+      },
+      {
+        title: "Experience Letter",
         url: "/certificates/experience",
         icon: Briefcase,
       },
@@ -169,11 +184,6 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
         title: "Appointment Letter",
         url: "/certificates/appointment",
         icon: FileCheck,
-      },
-      {
-        title: "Increment Letter",
-        url: "/certificates/increment",
-        icon: TrendingUp,
       },
     ],
   },

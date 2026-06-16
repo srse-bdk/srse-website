@@ -413,6 +413,18 @@ export default function DashboardPage() {
       href: "#",
       gradient: "from-cyan-500 to-cyan-600",
       subActions: [
+        {
+          label: "Compensation Package",
+          href: `/${role}/certificates/compensation-package`,
+        },
+        {
+          label: "Annual Increment",
+          href: `/${role}/certificates/annual-increment`,
+        },
+        {
+          label: "Terms & Conditions",
+          href: `/${role}/certificates/terms-conditions`,
+        },
         { label: "Experience Letter", href: `/${role}/certificates/experience` },
         { label: "Appointment Letter", href: `/${role}/certificates/appointment` },
       ],

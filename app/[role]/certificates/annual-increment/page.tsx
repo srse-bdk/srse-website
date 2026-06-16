@@ -5,35 +5,33 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useReactToPrint } from "react-to-print";
 import { Form } from "@/components/ui/form";
-import { officialExperienceLetterSchema } from "../_components/letter-types";
-import type { OfficialExperienceLetterData } from "../_components/letter-types";
-import { ExperienceLetterFormFields } from "../_components/experience-letter-form-fields";
-import { ExperienceLetterPreview } from "../_components/experience-letter-preview";
+import { annualIncrementLetterSchema } from "../_components/letter-types";
+import type { AnnualIncrementLetterData } from "../_components/letter-types";
+import { AnnualIncrementFormFields } from "../_components/annual-increment-form-fields";
+import { AnnualIncrementLetterPreview } from "../_components/annual-increment-letter-preview";
 import { LetterPageLayout } from "../_components/letter-page-layout";
 import { getDefaultSignatoryFields } from "../_components/letter-defaults";
 import { letterPrintPageStyle } from "../_components/letter-utils";
 
-export default function ExperienceCertificatePage() {
+export default function AnnualIncrementLetterPage() {
   const printRef = useRef<HTMLDivElement>(null);
 
-  const form = useForm<OfficialExperienceLetterData>({
-    resolver: zodResolver(officialExperienceLetterSchema) as any,
+  const form = useForm<AnnualIncrementLetterData>({
+    resolver: zodResolver(annualIncrementLetterSchema) as any,
     defaultValues: {
       ...getDefaultSignatoryFields(),
       letterDate: new Date().toISOString(),
       employeeId: "",
-      personName: "",
-      designation: "",
+      employeeName: "",
       location: "Bhadrak",
-      startDate: "",
-      endDate: "",
-      additionalParagraph: "",
+      revisedSalary: undefined,
+      effectiveDate: "",
     },
   });
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
-    documentTitle: "Experience Letter",
+    documentTitle: "Annual Increment Letter",
     pageStyle: letterPrintPageStyle,
   });
 
@@ -41,20 +39,22 @@ export default function ExperienceCertificatePage() {
 
   return (
     <LetterPageLayout
-      title="Experience Letter"
-      description="Official experience certificate for staff or any person not in the staff register."
-      printTitle="Experience Letter"
+      title="Annual Increment Letter"
+      description="Official letterhead format for revised compensation and annual increment."
+      printTitle="Annual Increment Letter"
       printRef={printRef}
       onPrint={() => handlePrint()}
       form={
         <Form {...form}>
           <form className="space-y-6">
-            <ExperienceLetterFormFields form={form} />
+            <AnnualIncrementFormFields form={form} />
           </form>
         </Form>
       }
-      preview={<ExperienceLetterPreview data={formData} />}
-      hiddenPrintContent={<ExperienceLetterPreview data={formData} isPrint />}
+      preview={<AnnualIncrementLetterPreview data={formData} />}
+      hiddenPrintContent={
+        <AnnualIncrementLetterPreview data={formData} isPrint />
+      }
     />
   );
 }
