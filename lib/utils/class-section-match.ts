@@ -160,3 +160,28 @@ export function studentClassSectionMatches(
 
   return true;
 }
+
+export function timeTableMatchesStudentClass(params: {
+  timetableClassName: string;
+  timetableClassId?: string;
+  timetableSection: string;
+  studentClass?: string;
+  studentSection?: string;
+  resolvedClassId?: string;
+}): boolean {
+  const {
+    timetableClassName,
+    timetableClassId,
+    timetableSection,
+    studentClass,
+    studentSection,
+    resolvedClassId,
+  } = params;
+
+  const classMatches =
+    Boolean(resolvedClassId && timetableClassId === resolvedClassId) ||
+    Boolean(studentClass && classTokensMatch(timetableClassName, studentClass));
+
+  if (!classMatches) return false;
+  return sectionTokensMatch(timetableSection, studentSection);
+}

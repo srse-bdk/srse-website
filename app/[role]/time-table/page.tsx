@@ -6,6 +6,7 @@ import { Plus, Calendar, Clock, BookOpen, Users, Download, Trash2, MoreVertical,
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import type { TimeTable } from "@/lib/types/time-table.type";
+import type { Class } from "@/lib/types/class.type";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { timeTableService } from "@/lib/services/time-table.service";
@@ -22,6 +23,10 @@ import { useReactToPrint } from "react-to-print";
 import { TimeTablePrintView } from "@/components/time-table/print-view";
 import { useAppStore } from "@/hooks/use-app-store";
 import { studentService } from "@/lib/services";
+import {
+    classTokensMatch,
+    timeTableMatchesStudentClass,
+} from "@/lib/utils/class-section-match";
 
 export default function TimeTablePage() {
     const router = useRouter();
@@ -29,22 +34,34 @@ export default function TimeTablePage() {
     const role = params.role as string;
     const user = useAppStore((state) => state.user);
     const isAdmin = user?.role === "admin";
+    const isStudent = user?.role === "student";
     const [studentClass, setStudentClass] = useState<{
         currentClass?: string;
         currentSection?: string;
     } | null>(null);
 
     useEffect(() => {
-        if (user?.role !== "student" || !user.studentId) return;
+        if (!isStudent) return;
+
+        const profileClass = {
+            currentClass: user?.currentClass,
+            currentSection: user?.currentSection,
+        };
+
+        if (profileClass.currentClass) {
+            setStudentClass(profileClass);
+        }
+
+        if (!user?.studentId) return;
+
         studentService.getById(user.studentId).then((student) => {
-            if (student) {
-                setStudentClass({
-                    currentClass: student.currentClass,
-                    currentSection: student.currentSection,
-                });
-            }
+            if (!student) return;
+            setStudentClass({
+                currentClass: student.currentClass || user?.currentClass,
+                currentSection: student.currentSection || user?.currentSection,
+            });
         });
-    }, [user?.role, user?.studentId]);
+    }, [isStudent, user?.studentId, user?.currentClass, user?.currentSection]);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedTimeTable, setSelectedTimeTable] = useState<TimeTable | null>(null);
     const printRef = useRef<HTMLDivElement>(null);
@@ -65,25 +82,42 @@ export default function TimeTablePage() {
         }
     }, [selectedTimeTable, handlePrint]);
 
-    const { data: timeTablesData, loading } = useFirebaseRealtime<TimeTable>("time-tables", {
+    const { data: timeTablesData, loading, error: timeTablesError } = useFirebaseRealtime<TimeTable>("time-tables", {
         asArray: true,
     });
+    const { data: classesData } = useFirebaseRealtime<Class>("classes", {
+        asArray: true,
+        enabled: isStudent,
+    });
     const timeTables = (timeTablesData as TimeTable[]) || [];
+    const classes = (classesData as Class[]) || [];
+
+    const resolvedStudentClassId = useMemo(() => {
+        if (!isStudent || !studentClass?.currentClass) return undefined;
+        const match = classes.find((cls) =>
+            classTokensMatch(cls.name, studentClass.currentClass || ""),
+        );
+        return match?.id;
+    }, [classes, isStudent, studentClass?.currentClass]);
 
     const roleScopedTimeTables = useMemo(() => {
-        if (user?.role === "student" && studentClass?.currentClass) {
-            return timeTables.filter(
-                (tt) =>
-                    tt.className === studentClass.currentClass &&
-                    (!studentClass.currentSection ||
-                        tt.section === studentClass.currentSection),
+        if (isStudent && studentClass?.currentClass) {
+            return timeTables.filter((tt) =>
+                timeTableMatchesStudentClass({
+                    timetableClassName: tt.className,
+                    timetableClassId: tt.classId,
+                    timetableSection: tt.section,
+                    studentClass: studentClass.currentClass,
+                    studentSection: studentClass.currentSection,
+                    resolvedClassId: resolvedStudentClassId,
+                }),
             );
         }
         if (user?.role === "parent") {
             return timeTables;
         }
         return timeTables;
-    }, [timeTables, user?.role, studentClass]);
+    }, [timeTables, user?.role, isStudent, studentClass, resolvedStudentClassId]);
 
     const filteredTimeTables = roleScopedTimeTables.filter(tt =>
         tt.className.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -164,7 +198,15 @@ export default function TimeTablePage() {
                         <div className="space-y-1">
                             <h3 className="text-xl font-bold">No Time Tables Found</h3>
                             <p className="text-muted-foreground max-w-sm">
-                                {searchTerm ? "No results match your search." : "Start by generating a new schedule for your class."}
+                                {timeTablesError
+                                    ? timeTablesError.message
+                                    : searchTerm
+                                      ? "No results match your search."
+                                      : isStudent && !studentClass?.currentClass
+                                        ? "Your class and section are not set on your student profile yet. Please contact the school office."
+                                        : isStudent && studentClass?.currentClass
+                                          ? `No timetable has been generated for Class ${studentClass.currentClass}${studentClass.currentSection ? ` Section ${studentClass.currentSection}` : ""} yet.`
+                                          : "Start by generating a new schedule for your class."}
                             </p>
                         </div>
                         {!searchTerm && isAdmin ? (
