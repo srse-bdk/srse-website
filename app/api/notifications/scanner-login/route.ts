@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getArrFromObj } from "@ashirbad/js-core";
 import { mutate } from "@atechhub/firebase";
+import { ensureFirebaseClient } from "@/lib/firebase";
 import { z } from "zod";
 import { isFirebaseAdminConfigured } from "@/lib/env";
 import { notificationService } from "@/lib/services/notification.service";
@@ -40,6 +41,7 @@ async function getAdminUserIds(): Promise<string[]> {
 
 export async function POST(request: Request) {
   try {
+    ensureFirebaseClient();
     const body = await request.json();
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {

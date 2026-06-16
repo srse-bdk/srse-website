@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getArrFromObj } from "@ashirbad/js-core";
 import { mutate } from "@atechhub/firebase";
+import { ensureFirebaseClient } from "@/lib/firebase";
 import type {
   ScannerLoginEvent,
   StudentGateEventRecord,
@@ -28,6 +29,7 @@ function toStudentEvents(raw: unknown): StudentGateEventRecord[] {
 
 export async function GET() {
   try {
+    ensureFirebaseClient();
     const [scannerRaw, studentRaw] = await Promise.all([
       mutate({ action: "get", path: "scannerLoginEvents" }),
       mutate({ action: "get", path: "studentGateEvents" }),
