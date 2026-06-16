@@ -13,12 +13,17 @@ import { schoolLetterheadDefaults } from "@/lib/config/school-letterhead";
 interface AnnualIncrementLetterPreviewProps {
   data: AnnualIncrementLetterData;
   isPrint?: boolean;
+  subjectLine?: string;
 }
+
+const DEFAULT_SUBJECT = "Annual Increment Letter";
+export const COMPENSATION_PACKAGE_SUBJECT =
+  "Revised Compensation and Terms of Employment";
 
 export const AnnualIncrementLetterPreview = forwardRef<
   HTMLDivElement,
   AnnualIncrementLetterPreviewProps
->(({ data, isPrint = false }, ref) => {
+>(({ data, isPrint = false, subjectLine = DEFAULT_SUBJECT }, ref) => {
   const letterDate = formatLetterDate(data.letterDate);
   const effectiveDate = formatLetterDate(data.effectiveDate, "d-MMM-yyyy");
 
@@ -37,7 +42,7 @@ export const AnnualIncrementLetterPreview = forwardRef<
           {data.location ? <p>{data.location}</p> : null}
         </div>
 
-        <p className="font-bold underline">Sub: Annual Increment Letter</p>
+        <p className="font-bold underline">Sub: {subjectLine}</p>
 
         <p>{getDearName(data.employeeName, data.gender)},</p>
 

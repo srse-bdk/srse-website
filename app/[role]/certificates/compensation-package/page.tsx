@@ -15,7 +15,7 @@ import type {
 } from "../_components/letter-types";
 import { AnnualIncrementFormFields } from "../_components/annual-increment-form-fields";
 import { TermsConditionsFormFields } from "../_components/terms-conditions-form-fields";
-import { AnnualIncrementLetterPreview } from "../_components/annual-increment-letter-preview";
+import { AnnualIncrementLetterPreview, COMPENSATION_PACKAGE_SUBJECT } from "../_components/annual-increment-letter-preview";
 import { TermsConditionsLetterPreview } from "../_components/terms-conditions-letter-preview";
 import { LetterPageLayout } from "../_components/letter-page-layout";
 import { getDefaultSignatoryFields } from "../_components/letter-defaults";
@@ -75,7 +75,7 @@ export default function CompensationPackagePage() {
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
-    documentTitle: "Compensation Package",
+    documentTitle: "Revised Compensation and Terms of Employment",
     pageStyle: letterPrintPageStyle,
   });
 
@@ -117,13 +117,20 @@ export default function CompensationPackagePage() {
       }
       preview={
         <div className="space-y-4">
-          <AnnualIncrementLetterPreview data={incrementData} />
+          <AnnualIncrementLetterPreview
+            data={incrementData}
+            subjectLine={COMPENSATION_PACKAGE_SUBJECT}
+          />
           <TermsConditionsLetterPreview data={termsData} />
         </div>
       }
       hiddenPrintContent={
         <>
-          <AnnualIncrementLetterPreview data={incrementData} isPrint />
+          <AnnualIncrementLetterPreview
+            data={incrementData}
+            isPrint
+            subjectLine={COMPENSATION_PACKAGE_SUBJECT}
+          />
           <TermsConditionsLetterPreview data={termsData} isPrint />
         </>
       }
