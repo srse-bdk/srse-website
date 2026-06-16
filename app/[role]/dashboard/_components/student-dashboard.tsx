@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Bell,
   CalendarClock,
   GraduationCap,
   Sparkles,
@@ -105,6 +106,12 @@ export function StudentDashboard() {
       description: "View your class schedule",
       icon: CalendarClock,
       href: `/${role}/time-table`,
+    },
+    {
+      title: "Gate activity",
+      description: "Arrival and dismissal history",
+      icon: Bell,
+      href: `/${role}/gate-activity`,
     },
     ...(user?.studentId
       ? [

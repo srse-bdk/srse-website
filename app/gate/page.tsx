@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { LogIn, LogOut, ScanLine } from "lucide-react";
+import { Bell, LogIn, LogOut, ScanLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -66,6 +66,25 @@ export default function GateHubPage() {
           </CardContent>
         </Card>
       </div>
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bell className="size-5" />
+              Activity log
+            </CardTitle>
+            <CardDescription>
+              View kiosk login history and student entry/exit scans.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" asChild>
+              <Link href="/gate/activity">Open activity log</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {isAdmin && <ScannerAccountManager />}
     </div>

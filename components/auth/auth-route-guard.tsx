@@ -6,7 +6,7 @@ import {
   isGatePath,
   isProtectedAppPath,
   isPublicPath,
-  canAccessGate,
+  canAccessGatePath,
   getRoleFromPath,
   isRoleScopedPath,
 } from "@/lib/config/auth-routes";
@@ -39,7 +39,7 @@ export function AuthRouteGuard({ children }: { children: React.ReactNode }) {
     authReady &&
     user?.role &&
     isGatePath(pathname) &&
-    !canAccessGate(user.role);
+    !canAccessGatePath(user.role, pathname);
 
   const roleBlocked =
     authReady &&
@@ -72,8 +72,8 @@ export function AuthRouteGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (isGatePath(pathname) && !canAccessGate(user.role)) {
-      toast.error("You do not have access to gate scanners.");
+    if (isGatePath(pathname) && !canAccessGatePath(user.role, pathname)) {
+      toast.error("You do not have access to this page.");
       router.replace(getDefaultRouteForRole(user.role));
       return;
     }

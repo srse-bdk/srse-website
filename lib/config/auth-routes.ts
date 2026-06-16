@@ -61,6 +61,20 @@ export function canAccessGate(role: UserRole): boolean {
   return role === "admin" || role === "scanner";
 }
 
+export function isGateActivityPath(pathname: string): boolean {
+  return (
+    pathname === `${GATE_PATH_PREFIX}/activity` ||
+    pathname.startsWith(`${GATE_PATH_PREFIX}/activity/`)
+  );
+}
+
+/** Gate entry/exit/hub for kiosk; activity log is admin-only. */
+export function canAccessGatePath(role: UserRole, pathname: string): boolean {
+  if (!isGatePath(pathname)) return false;
+  if (isGateActivityPath(pathname)) return role === "admin";
+  return canAccessGate(role);
+}
+
 export function isValidPortalRole(role: string): role is UserRole {
   return VALID_PORTAL_ROLES.includes(role as UserRole);
 }

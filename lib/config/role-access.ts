@@ -1,4 +1,4 @@
-import { canAccessGate, isGatePath } from "@/lib/config/auth-routes";
+import { canAccessGate, isGatePath, isGateActivityPath, canAccessGatePath } from "@/lib/config/auth-routes";
 import type { UserRole } from "@/lib/types/user.type";
 
 export type RoleAccessContext = {
@@ -58,6 +58,7 @@ const STUDENT_ROUTE_PATTERNS = [
   "/time-table",
   "/time-table/:id",
   "/students/:studentId",
+  "/gate-activity",
 ];
 
 const STAFF_ROUTE_PATTERNS = [
@@ -135,6 +136,7 @@ export function canUserAccessPathname(
   context: RoleAccessContext = {},
 ): boolean {
   if (canAccessGate(role) && isGatePath(pathname)) {
+    if (isGateActivityPath(pathname)) return role === "admin";
     return true;
   }
 

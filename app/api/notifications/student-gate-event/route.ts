@@ -26,13 +26,6 @@ async function findStudentUserUid(studentId: string): Promise<string | null> {
 
 export async function POST(request: Request) {
   try {
-    if (!isFirebaseAdminConfigured()) {
-      return NextResponse.json(
-        { success: false, error: "Firebase Admin SDK is not configured" },
-        { status: 400 },
-      );
-    }
-
     const body = await request.json();
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
@@ -43,30 +36,56 @@ export async function POST(request: Request) {
     }
 
     const { studentId, studentName, event, timestamp } = parsed.data;
+    const eventTime = timestamp ?? Date.now();
+    const eventId = `gate_${studentId}_${eventTime}`;
+
+    await mutate({
+      action: "update",
+      path: `studentGateEvents/${eventId}`,
+      data: {
+        studentId,
+        studentName,
+        event,
+        timestamp: eventTime,
+        createdAt: new Date(eventTime).toISOString(),
+      },
+      actionBy: "gate-scanner",
+    });
+
+    if (!isFirebaseAdminConfigured()) {
+      return NextResponse.json({
+        success: true,
+        recorded: true,
+        message: "Event recorded; push notifications not configured",
+      });
+    }
+
     const studentUid = await findStudentUserUid(studentId);
 
     if (!studentUid) {
       return NextResponse.json({
-        success: false,
-        message: "No student login linked for push notifications",
+        success: true,
+        recorded: true,
+        message: "Event recorded; no student login linked for push",
       });
     }
 
     const messaging = await getFirebaseAdminMessaging();
     if (!messaging) {
-      return NextResponse.json(
-        { success: false, error: "Messaging unavailable" },
-        { status: 500 },
-      );
+      return NextResponse.json({
+        success: true,
+        recorded: true,
+        message: "Event recorded; messaging unavailable",
+      });
     }
 
-    const when = formatDateTime(timestamp ?? Date.now());
+    const whenLabel = formatDateTime(eventTime);
     const title =
       event === "arrival" ? "School arrival recorded" : "School dismissal recorded";
     const bodyText =
       event === "arrival"
-        ? `${studentName}, your arrival was recorded at ${when}. Have a great day!`
-        : `${studentName}, your dismissal was recorded at ${when}. See you tomorrow!`;
+        ? `${studentName}, your arrival was recorded at ${whenLabel}. Have a great day!`
+        : `${studentName}, your dismissal was recorded at ${whenLabel}. See you tomorrow!`;
 
     const results = await notificationService.sendNotification(
       messaging,
@@ -76,7 +95,7 @@ export async function POST(request: Request) {
         body: bodyText,
         priority: "high",
         tag: `student-gate-${event}-${studentId}`,
-        clickAction: `/student/dashboard`,
+        clickAction: `/student/gate-activity`,
         data: {
           type: "student_gate_event",
           event,
@@ -88,11 +107,13 @@ export async function POST(request: Request) {
     const sent = results.some((result) => result.success);
 
     return NextResponse.json({
-      success: sent,
+      success: true,
+      recorded: true,
+      pushSent: sent,
       results,
       message: sent
-        ? "Notification sent"
-        : results[0]?.error || "Failed to send notification",
+        ? "Event recorded and notification sent"
+        : "Event recorded; push delivery failed",
     });
   } catch (error) {
     console.error("Student gate notification error:", error);

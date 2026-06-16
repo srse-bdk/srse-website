@@ -141,6 +141,7 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     fullPath: "/gate",
     subItems: [
       { title: "Scanner hub", url: "/gate", fullPath: "/gate", icon: ScanLine },
+      { title: "Activity log", url: "/gate/activity", fullPath: "/gate/activity", icon: Bell },
       { title: "Entry Scanner", url: "/gate/entry", fullPath: "/gate/entry", icon: LogIn },
       { title: "Exit Scanner", url: "/gate/exit", fullPath: "/gate/exit", icon: LogOut },
     ],
@@ -261,6 +262,12 @@ function buildStudentNavigation(studentId?: string): NavigationItem[] {
       title: "Class Time Table",
       url: "/time-table",
       icon: CalendarClock,
+      roles: ["student"],
+    },
+    {
+      title: "Gate activity",
+      url: "/gate-activity",
+      icon: Bell,
       roles: ["student"],
     },
   ];

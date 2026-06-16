@@ -12,7 +12,7 @@ import { getFirebaseAdminMessaging } from "@/lib/utils/firebase-admin-app";
 const bodySchema = z.object({
   scannerUserId: z.string().min(1),
   scannerName: z.string().min(1),
-  scannerEmail: z.string().min(1),
+  scannerEmail: z.string().optional().default(""),
   loginAt: z.number(),
   device: z.object({
     userAgent: z.string(),
@@ -55,12 +55,12 @@ export async function POST(request: Request) {
     const eventId = `login_${scannerUserId}_${loginAt}`;
 
     await mutate({
-      action: "create",
+      action: "update",
       path: `scannerLoginEvents/${eventId}`,
       data: {
         scannerUserId,
         scannerName,
-        scannerEmail,
+        scannerEmail: scannerEmail || "",
         device,
         ip,
         loginAt,
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
         body: bodyText,
         priority: "high",
         tag: eventId,
-        clickAction: "/gate",
+        clickAction: "/gate/activity",
         data: {
           type: "scanner_login",
           scannerUserId,

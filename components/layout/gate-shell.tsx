@@ -28,6 +28,9 @@ export function GateShell({ children }: { children: React.ReactNode }) {
 
   const navItems = [
     { href: "/gate", label: "Hub", exact: true },
+    ...(user?.role === "admin"
+      ? [{ href: "/gate/activity", label: "Activity" }]
+      : []),
     { href: "/gate/entry", label: "Entry" },
     { href: "/gate/exit", label: "Exit" },
   ];

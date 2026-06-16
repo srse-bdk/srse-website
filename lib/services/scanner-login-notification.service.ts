@@ -6,9 +6,9 @@ export async function notifyScannerLogin(params: {
   scannerName: string;
   scannerEmail: string;
   device?: ClientDeviceInfo;
-}): Promise<void> {
+}): Promise<boolean> {
   try {
-    await fetch("/api/notifications/scanner-login", {
+    const response = await fetch("/api/notifications/scanner-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -17,8 +17,25 @@ export async function notifyScannerLogin(params: {
         loginAt: Date.now(),
       }),
     });
+
+    const payload = (await response.json().catch(() => null)) as {
+      success?: boolean;
+      error?: string;
+      message?: string;
+    } | null;
+
+    if (!response.ok || payload?.success === false) {
+      console.warn(
+        "Scanner login notification failed:",
+        payload?.error || payload?.message || response.status,
+      );
+      return false;
+    }
+
+    return true;
   } catch (error) {
     console.warn("Scanner login notification failed:", error);
+    return false;
   }
 }
 

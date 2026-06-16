@@ -17,3 +17,4 @@ export * from "./staff-leave-accrual.service";
 export * from "./student-gate-notification.service";
 export * from "./scanner-user.service";
 export * from "./scanner-login-notification.service";
+export * from "./notification-history.service";
