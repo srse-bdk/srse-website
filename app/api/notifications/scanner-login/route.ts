@@ -47,16 +47,6 @@ async function getAdminUserIds(): Promise<string[]> {
 
 export async function POST(request: Request) {
   try {
-    if (!isFirebaseAdminConfigured()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Firebase Admin is not configured",
-        },
-        { status: 500 },
-      );
-    }
-
     const body = await request.json();
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
@@ -70,6 +60,15 @@ export async function POST(request: Request) {
       parsed.data;
     const ip = getClientIp(request);
     const eventId = `login_${scannerUserId}_${loginAt}`;
+
+    if (!isFirebaseAdminConfigured()) {
+      return NextResponse.json({
+        success: true,
+        pushSent: false,
+        eventId,
+        message: "Login recorded; push notifications require Firebase Admin",
+      });
+    }
 
     await updateRealtime(`scannerLoginEvents/${eventId}`, {
       scannerUserId,
@@ -85,6 +84,7 @@ export async function POST(request: Request) {
     if (adminIds.length === 0) {
       return NextResponse.json({
         success: true,
+        pushSent: false,
         message: "Login recorded; no admin users for push",
         eventId,
       });
@@ -94,6 +94,7 @@ export async function POST(request: Request) {
     if (!messaging) {
       return NextResponse.json({
         success: true,
+        pushSent: false,
         message: "Login recorded; messaging unavailable",
         eventId,
       });

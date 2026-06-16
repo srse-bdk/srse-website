@@ -1,5 +1,30 @@
+import { mutate } from "@atechhub/firebase";
 import type { ClientDeviceInfo } from "@/lib/utils/device-info";
 import { collectClientDeviceInfo } from "@/lib/utils/device-info";
+
+async function recordScannerLoginEvent(params: {
+  scannerUserId: string;
+  scannerName: string;
+  scannerEmail: string;
+  loginAt: number;
+  device: ClientDeviceInfo;
+}): Promise<void> {
+  const eventId = `login_${params.scannerUserId}_${params.loginAt}`;
+  await mutate({
+    action: "update",
+    path: `scannerLoginEvents/${eventId}`,
+    data: {
+      scannerUserId: params.scannerUserId,
+      scannerName: params.scannerName,
+      scannerEmail: params.scannerEmail || "",
+      device: params.device,
+      ip: "",
+      loginAt: params.loginAt,
+      createdAt: new Date(params.loginAt).toISOString(),
+    },
+    actionBy: params.scannerUserId,
+  });
+}
 
 export async function notifyScannerLogin(params: {
   scannerUserId: string;
@@ -7,14 +32,28 @@ export async function notifyScannerLogin(params: {
   scannerEmail: string;
   device?: ClientDeviceInfo;
 }): Promise<boolean> {
+  const loginAt = Date.now();
+  const device = params.device ?? collectClientDeviceInfo();
+
+  try {
+    await recordScannerLoginEvent({
+      ...params,
+      loginAt,
+      device,
+    });
+  } catch (error) {
+    console.warn("Scanner login event record failed:", error);
+    return false;
+  }
+
   try {
     const response = await fetch("/api/notifications/scanner-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...params,
-        device: params.device ?? collectClientDeviceInfo(),
-        loginAt: Date.now(),
+        device,
+        loginAt,
       }),
     });
 
@@ -26,17 +65,15 @@ export async function notifyScannerLogin(params: {
 
     if (!response.ok || payload?.success === false) {
       console.warn(
-        "Scanner login notification failed:",
+        "Scanner login push notification failed:",
         payload?.error || payload?.message || response.status,
       );
-      return false;
     }
-
-    return true;
   } catch (error) {
-    console.warn("Scanner login notification failed:", error);
-    return false;
+    console.warn("Scanner login push notification failed:", error);
   }
+
+  return true;
 }
 
 export function clearScannerLoginSessionFlag(scannerUserId: string): void {

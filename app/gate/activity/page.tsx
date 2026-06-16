@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Bell, Loader2, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { ArrowLeft, Bell, Loader2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { ScannerLoginHistoryList } from "@/components/notifications/scanner-login-history-list";
 import { StudentGateHistoryList } from "@/components/notifications/student-gate-history-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/hooks/use-app-store";
+import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import type {
   ScannerLoginEvent,
   StudentGateEventRecord,
@@ -17,47 +18,37 @@ import type {
 export default function GateActivityPage() {
   const user = useAppStore((state) => state.user);
   const [tab, setTab] = useState<"all" | "scanner" | "student">("all");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [scannerEvents, setScannerEvents] = useState<ScannerLoginEvent[]>([]);
-  const [studentEvents, setStudentEvents] = useState<StudentGateEventRecord[]>(
-    [],
+  const isAdmin = user?.role === "admin";
+
+  const {
+    data: scannerRaw,
+    loading: scannerLoading,
+    error: scannerError,
+  } = useFirebaseRealtime<ScannerLoginEvent>("scannerLoginEvents", {
+    enabled: isAdmin,
+    sort: (a, b) => b.loginAt - a.loginAt,
+  });
+
+  const {
+    data: studentRaw,
+    loading: studentLoading,
+    error: studentError,
+  } = useFirebaseRealtime<StudentGateEventRecord>("studentGateEvents", {
+    enabled: isAdmin,
+    sort: (a, b) => b.timestamp - a.timestamp,
+  });
+
+  const scannerEvents = useMemo(
+    () => (scannerRaw as ScannerLoginEvent[]) || [],
+    [scannerRaw],
+  );
+  const studentEvents = useMemo(
+    () => (studentRaw as StudentGateEventRecord[]) || [],
+    [studentRaw],
   );
 
-  const loadActivity = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/gate-activity", { cache: "no-store" });
-      const payload = (await response.json()) as {
-        success?: boolean;
-        scannerLogins?: ScannerLoginEvent[];
-        studentGateEvents?: StudentGateEventRecord[];
-        error?: string;
-      };
-
-      if (!response.ok || !payload.success) {
-        throw new Error(payload.error || "Failed to load gate activity");
-      }
-
-      setScannerEvents(payload.scannerLogins || []);
-      setStudentEvents(payload.studentGateEvents || []);
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Failed to load gate activity",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (user?.role === "admin") {
-      void loadActivity();
-    }
-  }, [user?.role, loadActivity]);
+  const loading = scannerLoading || studentLoading;
+  const error = scannerError?.message || studentError?.message || null;
 
   if (user?.role && user.role !== "admin") {
     return null;
@@ -80,19 +71,10 @@ export default function GateActivityPage() {
           <div>
             <h1 className="text-2xl font-bold">Gate activity</h1>
             <p className="text-sm text-muted-foreground">
-              Kiosk login history and student entry/exit scans.
+              Kiosk login history and student entry/exit scans. Updates live.
             </p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void loadActivity()}
-          disabled={loading}
-        >
-          <RefreshCw className={`size-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
       </div>
 
       {error ? (

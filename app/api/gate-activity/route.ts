@@ -30,14 +30,12 @@ function toStudentEvents(raw: unknown): StudentGateEventRecord[] {
 export async function GET() {
   try {
     if (!isFirebaseAdminConfigured()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Firebase Admin is not configured. Gate activity requires server credentials.",
-        },
-        { status: 500 },
-      );
+      return NextResponse.json({
+        success: true,
+        scannerLogins: [],
+        studentGateEvents: [],
+        message: "Use client realtime when Firebase Admin is not configured",
+      });
     }
 
     const [scannerRaw, studentRaw] = await Promise.all([

@@ -105,7 +105,7 @@ export const firebaseAuthConfig = {
 
 // Firebase Admin SDK configuration (server-only)
 export const firebaseAdminConfig = {
-  projectId: env.FIREBASE_PROJECT_ID,
+  projectId: env.FIREBASE_PROJECT_ID || env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   clientEmail: env.FIREBASE_CLIENT_EMAIL,
   privateKey: env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
 } as const;
@@ -119,8 +119,8 @@ export const firebaseVapidConfig = {
 // Helper to check if Firebase Admin is configured
 export const isFirebaseAdminConfigured = (): boolean => {
   return !!(
-    env.FIREBASE_PROJECT_ID &&
-    env.FIREBASE_CLIENT_EMAIL &&
-    env.FIREBASE_PRIVATE_KEY
+    firebaseAdminConfig.projectId &&
+    firebaseAdminConfig.clientEmail &&
+    firebaseAdminConfig.privateKey
   );
 };

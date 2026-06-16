@@ -7,7 +7,6 @@ import type { User } from "@/lib/types/user.type";
 import {
   getFirebaseAdminMessaging,
   getRealtimeValue,
-  updateRealtime,
 } from "@/lib/utils/firebase-admin-app";
 import { formatDateTime } from "@/lib/utils/date";
 
@@ -33,16 +32,6 @@ async function findStudentUserUid(studentId: string): Promise<string | null> {
 
 export async function POST(request: Request) {
   try {
-    if (!isFirebaseAdminConfigured()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Firebase Admin is not configured",
-        },
-        { status: 500 },
-      );
-    }
-
     const body = await request.json();
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
@@ -54,15 +43,15 @@ export async function POST(request: Request) {
 
     const { studentId, studentName, event, timestamp } = parsed.data;
     const eventTime = timestamp ?? Date.now();
-    const eventId = `gate_${studentId}_${eventTime}`;
 
-    await updateRealtime(`studentGateEvents/${eventId}`, {
-      studentId,
-      studentName,
-      event,
-      timestamp: eventTime,
-      createdAt: new Date(eventTime).toISOString(),
-    });
+    if (!isFirebaseAdminConfigured()) {
+      return NextResponse.json({
+        success: true,
+        recorded: true,
+        pushSent: false,
+        message: "Event recorded; push notifications require Firebase Admin",
+      });
+    }
 
     const studentUid = await findStudentUserUid(studentId);
 
@@ -70,6 +59,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         recorded: true,
+        pushSent: false,
         message: "Event recorded; no student login linked for push",
       });
     }
@@ -79,6 +69,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         recorded: true,
+        pushSent: false,
         message: "Event recorded; messaging unavailable",
       });
     }
