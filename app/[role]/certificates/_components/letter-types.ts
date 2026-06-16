@@ -20,6 +20,9 @@ export const annualIncrementLetterSchema = personSelectionSchema
     location: z.string().optional(),
     revisedSalary: z.number().min(1, "Revised salary is required"),
     effectiveDate: z.string().min(1, "Effective date is required"),
+    includeRetentionBonus: z.boolean(),
+    retentionBonusAmount: z.number().min(1).optional(),
+    retentionBonusPayoutNote: z.string().optional(),
   });
 
 export const termsConditionsLetterSchema = personSelectionSchema

@@ -26,6 +26,9 @@ export default function AnnualIncrementLetterPage() {
       location: "Bhadrak",
       revisedSalary: undefined,
       effectiveDate: "",
+      includeRetentionBonus: false,
+      retentionBonusAmount: undefined,
+      retentionBonusPayoutNote: "payout with March Salary",
     },
   });
 

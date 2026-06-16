@@ -9,6 +9,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DatePicker } from "@/components/ui/date-picker";
 import type { AnnualIncrementLetterData } from "./letter-types";
@@ -23,6 +24,8 @@ interface AnnualIncrementFormFieldsProps {
 export function AnnualIncrementFormFields({
   form,
 }: AnnualIncrementFormFieldsProps) {
+  const includeRetentionBonus = form.watch("includeRetentionBonus");
+
   const handleStaffSelect = (staff: User) => {
     if (staff.scanId) {
       form.setValue("employeeId", staff.scanId);
@@ -123,6 +126,72 @@ export function AnnualIncrementFormFields({
             )}
           />
         </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle>Retention bonus (optional)</CardTitle>
+          <FormField
+            control={form.control}
+            name="includeRetentionBonus"
+            render={({ field }) => (
+              <FormItem className="flex items-center gap-2 space-y-0">
+                <FormLabel className="text-sm font-normal">Include in letter</FormLabel>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+        </CardHeader>
+        {includeRetentionBonus ? (
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="retentionBonusAmount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Annual retention bonus (INR)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={field.value ?? ""}
+                      onChange={(event) =>
+                        field.onChange(
+                          event.target.value
+                            ? Number(event.target.value)
+                            : undefined,
+                        )
+                      }
+                      placeholder="e.g. 10000"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="retentionBonusPayoutNote"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Payout note</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder="payout with March Salary"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </CardContent>
+        ) : null}
       </Card>
 
       <SignatoryFormFields

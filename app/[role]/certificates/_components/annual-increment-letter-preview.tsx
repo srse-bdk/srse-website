@@ -52,6 +52,16 @@ export const AnnualIncrementLetterPreview = forwardRef<
             <strong>{formatSalaryInr(data.revisedSalary)}</strong> effective from{" "}
             <strong>{effectiveDate || "________"}</strong>.
           </li>
+          {data.includeRetentionBonus && data.retentionBonusAmount ? (
+            <li>
+              Furthermore, you are eligible for an annual retention bonus of{" "}
+              <strong>{formatSalaryInr(data.retentionBonusAmount)}</strong>
+              {data.retentionBonusPayoutNote
+                ? ` (${data.retentionBonusPayoutNote})`
+                : null}
+              .
+            </li>
+          ) : null}
         </ul>
 
         <p>
@@ -66,8 +76,9 @@ export const AnnualIncrementLetterPreview = forwardRef<
         </p>
 
         <p>
-          We value your contribution to {schoolLetterheadDefaults.schoolName}{" "}
-          and wish you a successful career with us.
+          We value your association with {schoolLetterheadDefaults.schoolName}{" "}
+          and look forward to your continued contributions during the upcoming
+          academic year.
         </p>
 
         <SignatoryBlock

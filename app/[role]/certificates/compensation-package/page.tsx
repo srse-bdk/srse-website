@@ -35,6 +35,9 @@ export default function CompensationPackagePage() {
       location: "Bhadrak",
       revisedSalary: undefined,
       effectiveDate: "",
+      includeRetentionBonus: false,
+      retentionBonusAmount: undefined,
+      retentionBonusPayoutNote: "payout with March Salary",
     },
   });
 
