@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getArrFromObj } from "@ashirbad/js-core";
-import { mutate } from "@atechhub/firebase";
-import { ensureFirebaseClient } from "@/lib/firebase";
 import { z } from "zod";
 import { isFirebaseAdminConfigured } from "@/lib/env";
 import { notificationService } from "@/lib/services/notification.service";
 import type { User } from "@/lib/types/user.type";
-import { getFirebaseAdminMessaging } from "@/lib/utils/firebase-admin-app";
+import {
+  getFirebaseAdminMessaging,
+  getRealtimeValue,
+  updateRealtime,
+} from "@/lib/utils/firebase-admin-app";
 import { formatDateTime } from "@/lib/utils/date";
 
 const bodySchema = z.object({
@@ -17,8 +19,12 @@ const bodySchema = z.object({
 });
 
 async function findStudentUserUid(studentId: string): Promise<string | null> {
-  const data = await mutate({ action: "get", path: "users" });
-  const users = getArrFromObj(data || {}) as unknown as User[];
+  const raw = await getRealtimeValue("users");
+  const data =
+    raw && typeof raw === "object"
+      ? (raw as Record<string, Record<string, unknown>>)
+      : {};
+  const users = getArrFromObj(data) as unknown as User[];
   const match = users.find(
     (user) => user.role === "student" && user.studentId === studentId,
   );
@@ -27,7 +33,16 @@ async function findStudentUserUid(studentId: string): Promise<string | null> {
 
 export async function POST(request: Request) {
   try {
-    ensureFirebaseClient();
+    if (!isFirebaseAdminConfigured()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Firebase Admin is not configured",
+        },
+        { status: 500 },
+      );
+    }
+
     const body = await request.json();
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
@@ -41,26 +56,13 @@ export async function POST(request: Request) {
     const eventTime = timestamp ?? Date.now();
     const eventId = `gate_${studentId}_${eventTime}`;
 
-    await mutate({
-      action: "update",
-      path: `studentGateEvents/${eventId}`,
-      data: {
-        studentId,
-        studentName,
-        event,
-        timestamp: eventTime,
-        createdAt: new Date(eventTime).toISOString(),
-      },
-      actionBy: "gate-scanner",
+    await updateRealtime(`studentGateEvents/${eventId}`, {
+      studentId,
+      studentName,
+      event,
+      timestamp: eventTime,
+      createdAt: new Date(eventTime).toISOString(),
     });
-
-    if (!isFirebaseAdminConfigured()) {
-      return NextResponse.json({
-        success: true,
-        recorded: true,
-        message: "Event recorded; push notifications not configured",
-      });
-    }
 
     const studentUid = await findStudentUserUid(studentId);
 

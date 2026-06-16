@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getArrFromObj } from "@ashirbad/js-core";
-import { mutate } from "@atechhub/firebase";
-import { ensureFirebaseClient } from "@/lib/firebase";
+import { isFirebaseAdminConfigured } from "@/lib/env";
 import type {
   ScannerLoginEvent,
   StudentGateEventRecord,
 } from "@/lib/types/notification-history.type";
+import { getRealtimeValue } from "@/lib/utils/firebase-admin-app";
 
 function toScannerEvents(raw: unknown): ScannerLoginEvent[] {
   const data =
@@ -29,10 +29,20 @@ function toStudentEvents(raw: unknown): StudentGateEventRecord[] {
 
 export async function GET() {
   try {
-    ensureFirebaseClient();
+    if (!isFirebaseAdminConfigured()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Firebase Admin is not configured. Gate activity requires server credentials.",
+        },
+        { status: 500 },
+      );
+    }
+
     const [scannerRaw, studentRaw] = await Promise.all([
-      mutate({ action: "get", path: "scannerLoginEvents" }),
-      mutate({ action: "get", path: "studentGateEvents" }),
+      getRealtimeValue("scannerLoginEvents"),
+      getRealtimeValue("studentGateEvents"),
     ]);
 
     return NextResponse.json({

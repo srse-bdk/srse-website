@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { getArrFromObj } from "@ashirbad/js-core";
-import { mutate } from "@atechhub/firebase";
-import { ensureFirebaseClient } from "@/lib/firebase";
 import { z } from "zod";
 import { isFirebaseAdminConfigured } from "@/lib/env";
 import { notificationService } from "@/lib/services/notification.service";
 import type { User } from "@/lib/types/user.type";
 import { formatDeviceInfoSummary } from "@/lib/utils/device-info";
 import { formatDateTime } from "@/lib/utils/date";
-import { getFirebaseAdminMessaging } from "@/lib/utils/firebase-admin-app";
+import {
+  getFirebaseAdminMessaging,
+  getRealtimeValue,
+  updateRealtime,
+} from "@/lib/utils/firebase-admin-app";
 
 const bodySchema = z.object({
   scannerUserId: z.string().min(1),
@@ -31,8 +33,12 @@ function getClientIp(request: Request): string {
 }
 
 async function getAdminUserIds(): Promise<string[]> {
-  const data = await mutate({ action: "get", path: "users" });
-  const users = getArrFromObj(data || {}) as unknown as User[];
+  const raw = await getRealtimeValue("users");
+  const data =
+    raw && typeof raw === "object"
+      ? (raw as Record<string, Record<string, unknown>>)
+      : {};
+  const users = getArrFromObj(data) as unknown as User[];
   return users
     .filter((user) => user.role === "admin" && user.status !== "inactive")
     .map((user) => user.uid)
@@ -41,7 +47,16 @@ async function getAdminUserIds(): Promise<string[]> {
 
 export async function POST(request: Request) {
   try {
-    ensureFirebaseClient();
+    if (!isFirebaseAdminConfigured()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Firebase Admin is not configured",
+        },
+        { status: 500 },
+      );
+    }
+
     const body = await request.json();
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
@@ -56,28 +71,15 @@ export async function POST(request: Request) {
     const ip = getClientIp(request);
     const eventId = `login_${scannerUserId}_${loginAt}`;
 
-    await mutate({
-      action: "update",
-      path: `scannerLoginEvents/${eventId}`,
-      data: {
-        scannerUserId,
-        scannerName,
-        scannerEmail: scannerEmail || "",
-        device,
-        ip,
-        loginAt,
-        createdAt: new Date(loginAt).toISOString(),
-      },
-      actionBy: scannerUserId,
+    await updateRealtime(`scannerLoginEvents/${eventId}`, {
+      scannerUserId,
+      scannerName,
+      scannerEmail: scannerEmail || "",
+      device,
+      ip,
+      loginAt,
+      createdAt: new Date(loginAt).toISOString(),
     });
-
-    if (!isFirebaseAdminConfigured()) {
-      return NextResponse.json({
-        success: true,
-        message: "Login recorded; push notifications not configured",
-        eventId,
-      });
-    }
 
     const adminIds = await getAdminUserIds();
     if (adminIds.length === 0) {
