@@ -6,6 +6,8 @@ import {
   mutate,
 } from "@atechhub/firebase";
 import type { User, UserInput, UserUpdateInput, ProfileOnlyStaffInput } from "@/lib/types/user.type";
+import { normalizeLoginEmail } from "@/lib/utils/auth-email";
+import { getAuthErrorMessage, isAuthRateLimited } from "@/lib/utils/auth-errors";
 import { ensureUniqueScanId, generateUniqueScanId } from "@/lib/utils/scan-id";
 import { isProfileOnlyStaff } from "@/lib/utils/staff-profile";
 
@@ -54,8 +56,10 @@ class StaffService {
     userId: string;
     authResponse: Awaited<ReturnType<typeof createUser>>;
   }> {
+    const email = normalizeLoginEmail(data.email);
+
     // Step 1: Create Firebase Auth user
-    const authResponse = await createUser(data.email, data.password);
+    const authResponse = await createUser(email, data.password);
 
     const scanId = data.scanId
       ? await ensureUniqueScanId(data.scanId)
@@ -69,7 +73,7 @@ class StaffService {
         uid: authResponse.localId,
         scanId,
         name: data.name,
-        email: data.email,
+        email,
         password: data.password,
         role: "staff",
         status: "active",
@@ -189,8 +193,14 @@ class StaffService {
    * Get staff by email
    */
   async getByEmail(email: string): Promise<User | null> {
+    const normalized = normalizeLoginEmail(email);
     const staffs = await this.getAll();
-    return staffs.find((staff) => staff.email === email) || null;
+    return (
+      staffs.find(
+        (staff) =>
+          staff.email && normalizeLoginEmail(staff.email) === normalized,
+      ) || null
+    );
   }
 
   /**
@@ -214,7 +224,102 @@ class StaffService {
       throw new Error("Staff not found");
     }
 
-    await changePassword(staff.email, currentPassword, newPassword);
+    const email = normalizeLoginEmail(staff.email);
+    await changePassword(email, currentPassword, newPassword);
+
+    await mutate({
+      action: "update",
+      path: `users/${id}`,
+      data: {
+        password: newPassword,
+        email,
+      },
+      actionBy: "admin",
+    });
+  }
+
+  async resetPasswordAdmin(
+    id: string,
+    newPassword: string,
+    currentPassword?: string,
+  ): Promise<void> {
+    try {
+      const response = await fetch("/api/staff/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId: id, newPassword }),
+      });
+
+      if (response.ok) {
+        return;
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+
+      if (response.status !== 503) {
+        throw new Error(payload.error || "Failed to reset password");
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        !error.message.includes("not available on this server")
+      ) {
+        throw error;
+      }
+    }
+
+    const staff = await this.getById(id);
+    if (!staff) {
+      throw new Error("Staff not found");
+    }
+
+    const email = normalizeLoginEmail(staff.email || "");
+    if (!email) {
+      throw new Error("Staff email is missing on the profile.");
+    }
+
+    const knownCurrentPassword = currentPassword?.trim() || staff.password?.trim();
+    if (!knownCurrentPassword) {
+      throw new Error(
+        "Enter the staff member's current password below, or configure Firebase Admin in .env.local (FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY) to reset without it.",
+      );
+    }
+
+    try {
+      await changePassword(email, knownCurrentPassword, newPassword);
+    } catch (error) {
+      if (isAuthRateLimited(error)) {
+        throw new Error(
+          "Too many failed attempts — this email is temporarily locked by Firebase. Wait 15–30 minutes, then try again. To reset immediately, add Firebase Admin credentials to .env.local and retry without a current password.",
+        );
+      }
+
+      const message =
+        error instanceof Error ? error.message.toLowerCase() : "";
+
+      if (
+        message.includes("invalid-credential") ||
+        message.includes("wrong-password")
+      ) {
+        throw new Error(
+          "The current password is incorrect in Firebase. Configure Firebase Admin credentials in .env.local to force-reset this account.",
+        );
+      }
+
+      throw new Error(getAuthErrorMessage(error, "Failed to reset password."));
+    }
+
+    await mutate({
+      action: "update",
+      path: `users/${id}`,
+      data: {
+        password: newPassword,
+        email,
+      },
+      actionBy: "admin",
+    });
   }
 
   async markIdCardPrinted(staffIds: string[]): Promise<number> {

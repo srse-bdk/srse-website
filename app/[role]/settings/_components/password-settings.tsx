@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useAppStore } from "@/hooks/use-app-store";
+import { getAuthErrorMessage } from "@/lib/utils/auth-errors";
 import { firebaseAuth } from "@atechhub/firebase";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, Loader2, Lock, Shield } from "lucide-react";
@@ -87,22 +88,7 @@ export function PasswordSettings() {
       form.reset();
     } catch (error) {
       console.error("Error changing password:", error);
-      if (error instanceof Error) {
-        if (
-          error.message.includes("wrong-password") ||
-          error.message.includes("invalid-credential")
-        ) {
-          toast.error("Current password is incorrect");
-        } else if (error.message.includes("weak-password")) {
-          toast.error(
-            "New password is too weak. Please choose a stronger password.",
-          );
-        } else {
-          toast.error("Failed to change password. Please try again.");
-        }
-      } else {
-        toast.error("Failed to change password. Please try again.");
-      }
+      toast.error(getAuthErrorMessage(error, "Failed to change password. Please try again."));
     } finally {
       setIsLoading(false);
     }

@@ -64,3 +64,9 @@ export async function getFirebaseAdminMessaging() {
   const firebaseAdmin = await getAdminModule();
   return firebaseAdmin.messaging(app);
 }
+
+export async function getFirebaseAdminAuth() {
+  const app = await getFirebaseAdminApp();
+  const firebaseAdmin = await getAdminModule();
+  return firebaseAdmin.auth(app);
+}

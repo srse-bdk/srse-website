@@ -1,9 +1,11 @@
 "use client";
 
-import { firebaseAuth } from "@atechhub/firebase";
-import { mutate } from "@atechhub/firebase";
+import { firebaseAuth, mutate } from "@atechhub/firebase";
 import type { User } from "@/lib/types/user.type";
+import { normalizeLoginEmail } from "@/lib/utils/auth-email";
+import { getAuthErrorMessage } from "@/lib/utils/auth-errors";
 import { normalizePen } from "@/lib/utils/student-login";
+import { isProfileOnlyStaff } from "@/lib/utils/staff-profile";
 import { AuthForm, type AuthFormData } from "../_components/auth-form";
 
 export default function SignInPage() {
@@ -32,6 +34,32 @@ export default function SignInPage() {
         }
 
         loginEmail = studentUser.email;
+      } else {
+        loginEmail = normalizeLoginEmail(loginIdentifier);
+
+        const allUsers = (await mutate({
+          action: "get",
+          path: "users",
+        })) as Record<string, User> | null;
+
+        const portalUser = Object.values(allUsers || {}).find(
+          (user) =>
+            user?.email &&
+            normalizeLoginEmail(user.email) === loginEmail,
+        );
+
+        if (portalUser) {
+          if (isProfileOnlyStaff(portalUser)) {
+            throw new Error(
+              "This account cannot sign in to the portal. Please contact the school office.",
+            );
+          }
+          if (portalUser.status === "inactive") {
+            throw new Error(
+              "Your account is inactive. Please contact the school office.",
+            );
+          }
+        }
       }
 
       await firebaseAuth({
@@ -41,28 +69,7 @@ export default function SignInPage() {
       });
     } catch (error) {
       console.error("Signin error:", error);
-
-      if (error instanceof Error) {
-        if (
-          error.message.includes("user-not-found") ||
-          error.message.includes("invalid-credential")
-        ) {
-          throw new Error(
-            "Invalid email or password. Please check your credentials.",
-          );
-        }
-        if (error.message.includes("too-many-requests")) {
-          throw new Error("Too many failed attempts. Please try again later.");
-        }
-        if (error.message.includes("user-disabled")) {
-          throw new Error(
-            "This account has been disabled. Please contact support.",
-          );
-        }
-        throw error;
-      }
-
-      throw new Error("Failed to sign in. Please check your credentials.");
+      throw new Error(getAuthErrorMessage(error, "Failed to sign in. Please check your credentials."));
     }
   };
 

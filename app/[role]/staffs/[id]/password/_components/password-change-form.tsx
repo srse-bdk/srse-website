@@ -28,21 +28,22 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { staffService } from "@/lib/services";
 import type { User } from "@/lib/types/user.type";
+import { isProfileOnlyStaff } from "@/lib/utils/staff-profile";
 
-const passwordChangeSchema = z
+const passwordResetSchema = z
   .object({
-    currentPassword: z.string().min(1, "Current password is required"),
+    currentPassword: z.string().optional(),
     newPassword: z
       .string()
       .min(8, "New password must be at least 8 characters"),
-    confirmPassword: z.string().min(8, "Please confirm your new password"),
+    confirmPassword: z.string().min(8, "Please confirm the new password"),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
     message: "Passwords don't match",
     path: ["confirmPassword"],
   });
 
-type PasswordChangeFormData = z.infer<typeof passwordChangeSchema>;
+type PasswordResetFormData = z.infer<typeof passwordResetSchema>;
 
 interface PasswordChangeFormProps {
   staffId?: string;
@@ -62,8 +63,8 @@ export function PasswordChangeForm({ staffId }: PasswordChangeFormProps) {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const form = useForm<PasswordChangeFormData>({
-    resolver: zodResolver(passwordChangeSchema),
+  const form = useForm<PasswordResetFormData>({
+    resolver: zodResolver(passwordResetSchema),
     defaultValues: {
       currentPassword: "",
       newPassword: "",
@@ -92,29 +93,37 @@ export function PasswordChangeForm({ staffId }: PasswordChangeFormProps) {
     };
 
     fetchStaff();
-  }, [id, router]);
+  }, [id, router, role]);
 
-  const onSubmit = async (data: PasswordChangeFormData) => {
+  const onSubmit = async (data: PasswordResetFormData) => {
+    if (!staff) return;
+
+    if (isProfileOnlyStaff(staff)) {
+      toast.error("This staff profile has no portal login.");
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await staffService.changePassword(
+      await staffService.resetPasswordAdmin(
         id,
-        data.currentPassword,
         data.newPassword,
+        data.currentPassword,
       );
 
-      // Show success alert with transition
       setShowSuccess(true);
+      toast.success("Password reset successfully.");
 
-      // Hide success alert after 3 seconds and redirect
       setTimeout(() => {
         setShowSuccess(false);
         router.push(`/${role}/staffs`);
       }, 3000);
     } catch (error) {
-      console.error("Error changing password:", error);
+      console.error("Error resetting password:", error);
       toast.error(
-        "Failed to change password. Please check your current password and try again.",
+        error instanceof Error
+          ? error.message
+          : "Failed to reset password. Please try again.",
       );
     } finally {
       setIsLoading(false);
@@ -135,7 +144,7 @@ export function PasswordChangeForm({ staffId }: PasswordChangeFormProps) {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4">
-              {[...Array(3)].map((_, i) => (
+              {[...Array(2)].map((_, i) => (
                 <div key={i} className="space-y-2">
                   <Skeleton className="h-4 w-24" />
                   <Skeleton className="h-10 w-full" />
@@ -152,6 +161,8 @@ export function PasswordChangeForm({ staffId }: PasswordChangeFormProps) {
     );
   }
 
+  const profileOnly = isProfileOnlyStaff(staff);
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="space-y-2">
@@ -166,9 +177,10 @@ export function PasswordChangeForm({ staffId }: PasswordChangeFormProps) {
             Back to Staffs
           </Button>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">Change Password</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Reset Password</h1>
         <p className="text-muted-foreground">
-          Update the password for {staff?.name}.
+          Set a new login password for {staff?.name}
+          {staff?.email ? ` (${staff.email})` : ""}.
         </p>
       </div>
 
@@ -176,167 +188,178 @@ export function PasswordChangeForm({ staffId }: PasswordChangeFormProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Lock className="h-5 w-5" />
-            Password Change
+            Portal login password
           </CardTitle>
           <CardDescription>
-            Enter the current password and set a new password for this staff
-            account.
+            Sets a new portal login password. If Firebase Admin is configured on
+            the server, the current password is not required. Otherwise, enter
+            the password that was set when the staff account was created.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Success Alert with Transition */}
-              {showSuccess && (
-                <Alert className="border-green-200 bg-green-50 text-green-800 transition-all duration-300 ease-in-out animate-in slide-in-from-top-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <AlertDescription className="text-green-800">
-                    Password changed successfully! Redirecting to staffs list...
-                  </AlertDescription>
-                </Alert>
-              )}
+          {profileOnly ? (
+            <Alert>
+              <AlertDescription>
+                This is a profile-only staff record with no portal login. Create
+                a teaching staff account with an email if they need to sign in.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                {showSuccess ? (
+                  <Alert className="border-green-200 bg-green-50 text-green-800 transition-all duration-300 ease-in-out animate-in slide-in-from-top-2">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <AlertDescription className="text-green-800">
+                      Password reset successfully! Redirecting to staffs list...
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
 
-              <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="currentPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-2">
-                        <Lock className="h-4 w-4" />
-                        Current Password
-                      </FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Input
-                            type={showCurrentPassword ? "text" : "password"}
-                            placeholder="Enter current password"
-                            {...field}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                            onClick={() =>
-                              setShowCurrentPassword(!showCurrentPassword)
-                            }
-                          >
-                            {showCurrentPassword ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="currentPassword"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-2">
+                          <Lock className="h-4 w-4" />
+                          Current password (optional)
+                        </FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input
+                              type={showCurrentPassword ? "text" : "password"}
+                              placeholder="Leave blank if server admin reset is enabled"
+                              {...field}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                              onClick={() =>
+                                setShowCurrentPassword(!showCurrentPassword)
+                              }
+                            >
+                              {showCurrentPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="newPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-2">
-                        <Lock className="h-4 w-4" />
-                        New Password
-                      </FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Input
-                            type={showNewPassword ? "text" : "password"}
-                            placeholder="Enter new password"
-                            {...field}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                            onClick={() => setShowNewPassword(!showNewPassword)}
-                          >
-                            {showNewPassword ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  <FormField
+                    control={form.control}
+                    name="newPassword"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-2">
+                          <Lock className="h-4 w-4" />
+                          New password
+                        </FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input
+                              type={showNewPassword ? "text" : "password"}
+                              placeholder="Enter new password"
+                              {...field}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                              onClick={() => setShowNewPassword(!showNewPassword)}
+                            >
+                              {showNewPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-2">
-                        <Lock className="h-4 w-4" />
-                        Confirm New Password
-                      </FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Input
-                            type={showConfirmPassword ? "text" : "password"}
-                            placeholder="Confirm new password"
-                            {...field}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                            onClick={() =>
-                              setShowConfirmPassword(!showConfirmPassword)
-                            }
-                          >
-                            {showConfirmPassword ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                  <FormField
+                    control={form.control}
+                    name="confirmPassword"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-2">
+                          <Lock className="h-4 w-4" />
+                          Confirm new password
+                        </FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input
+                              type={showConfirmPassword ? "text" : "password"}
+                              placeholder="Confirm new password"
+                              {...field}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                              onClick={() =>
+                                setShowConfirmPassword(!showConfirmPassword)
+                              }
+                            >
+                              {showConfirmPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
 
-              <div className="bg-muted/50 p-4 rounded-lg">
-                <h4 className="font-medium text-sm mb-2">
-                  Password Requirements
-                </h4>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>• Password must be at least 8 characters long</li>
-                  <li>• Use a combination of letters, numbers, and symbols</li>
-                  <li>• Avoid common words or personal information</li>
-                  <li>• The staff will need to use this password to log in</li>
-                </ul>
-              </div>
+                <div className="bg-muted/50 p-4 rounded-lg">
+                  <h4 className="font-medium text-sm mb-2">
+                    Password requirements
+                  </h4>
+                  <ul className="text-sm text-muted-foreground space-y-1">
+                    <li>• Password must be at least 8 characters long</li>
+                    <li>
+                      • Without Firebase Admin on the server, use the original
+                      password from when the account was created
+                    </li>
+                    <li>• Share the new password securely with the staff member</li>
+                  </ul>
+                </div>
 
-              <div className="flex gap-4">
-                <Button type="submit" disabled={isLoading} className="flex-1">
-                  {isLoading ? "Changing Password..." : "Change Password"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => router.push(`/${role}/staffs`)}
-                  disabled={isLoading}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </Form>
+                <div className="flex gap-4">
+                  <Button type="submit" disabled={isLoading} className="flex-1">
+                    {isLoading ? "Resetting password..." : "Reset password"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => router.push(`/${role}/staffs`)}
+                    disabled={isLoading}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          )}
         </CardContent>
       </Card>
     </div>
