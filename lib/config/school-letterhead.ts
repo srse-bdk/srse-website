@@ -10,11 +10,19 @@ export const schoolLetterheadDefaults = {
   signatoryTitle: "Secretary and Trusty, RN Ray Educational Charitable Trust",
 } as const;
 
+export const defaultAdditionalRoleText =
+  "Additionally, you will be doing the role of course coordinator managing academic activities in the school.";
+
 export const defaultTermsConditionsBullets = [
   {
     title: "Job Title & Responsibilities",
-    body: (jobTitle: string, reportingTo: string) =>
-      `You're an ${jobTitle} reporting to ${reportingTo}.`,
+    body: (jobTitle: string, reportingTo: string, additionalRole?: string) => {
+      let text = `You're an ${jobTitle} reporting to ${reportingTo}.`;
+      if (additionalRole?.trim()) {
+        text += ` ${additionalRole.trim()}`;
+      }
+      return text;
+    },
   },
   {
     title: "Performance",

@@ -66,19 +66,27 @@ export const letterPrintPageStyle = `
     }
     .letter-print-inner {
       height: 100%;
-      min-height: 0;
+      min-height: 100%;
       display: flex;
       flex-direction: column;
-      padding: 10mm 12mm 8mm;
+      padding: 12mm 12mm 10mm;
       box-sizing: border-box;
     }
     .letter-print-main {
-      flex: 1 1 auto;
-      min-height: 0;
+      flex: 0 0 auto;
+      width: 100%;
     }
     .letter-print-footer {
-      flex-shrink: 0;
       margin-top: auto;
+      flex-shrink: 0;
+    }
+    .letter-body-content {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .letter-signature-block {
+      margin-top: 2rem;
     }
     .print-root {
       margin: 0 !important;

@@ -33,6 +33,8 @@ export const termsConditionsLetterSchema = personSelectionSchema
     reportingTo: z.string().min(1, "Reporting manager is required"),
     noticePeriodMonths: z.number().min(1).max(12),
     acknowledgmentDate: z.string().optional(),
+    includeAdditionalRole: z.boolean(),
+    additionalRoleText: z.string().optional(),
   });
 
 export const officialExperienceLetterSchema = personSelectionSchema

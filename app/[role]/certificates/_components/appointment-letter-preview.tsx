@@ -75,7 +75,6 @@ export const AppointmentLetterPreview = forwardRef<
         <SignatoryBlock
           signatoryName={data.signatoryName}
           signatoryTitle={data.signatoryTitle}
-          compact={isPrint}
         />
       </div>
     </SchoolLetterhead>

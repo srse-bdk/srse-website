@@ -19,10 +19,16 @@ export const TermsConditionsLetterPreview = forwardRef<
     ? formatLetterDate(data.acknowledgmentDate, "dd/MM/yyyy")
     : "";
 
+  const additionalRole =
+    data.includeAdditionalRole && data.additionalRoleText?.trim()
+      ? data.additionalRoleText.trim()
+      : undefined;
+
   const bullets = [
     defaultTermsConditionsBullets[0].body(
       data.jobTitle,
       data.reportingTo,
+      additionalRole,
     ),
     defaultTermsConditionsBullets[1].body(),
     defaultTermsConditionsBullets[2].body(),
@@ -35,14 +41,10 @@ export const TermsConditionsLetterPreview = forwardRef<
       schoolLogo={data.schoolLogo}
       isPrint={isPrint}
     >
-      <div className={isPrint ? "space-y-3" : "space-y-5"}>
+      <div className="letter-body-content space-y-5">
         <p className="font-bold">Terms &amp; Conditions:</p>
 
-        <ul
-          className={`list-disc pl-6 ${
-            isPrint ? "space-y-2 text-[10.5pt]" : "space-y-4"
-          }`}
-        >
+        <ul className="list-disc space-y-4 pl-6">
           {defaultTermsConditionsBullets.map((item, index) => (
             <li key={item.title}>
               <strong>{item.title}:</strong> {bullets[index]}
@@ -50,18 +52,14 @@ export const TermsConditionsLetterPreview = forwardRef<
           ))}
         </ul>
 
-        <p className={isPrint ? "pt-1" : "pt-2"}>
+        <p className="pt-2">
           By continuing your employment, you acknowledge that you have read,
           understood, and agree to these terms.
         </p>
 
-        <div className={isPrint ? "mt-4 space-y-5" : "mt-10 space-y-8"}>
-          <div>
-            <p
-              className={`border-b border-dotted border-gray-500 pb-1 ${
-                isPrint ? "mb-4" : "mb-8"
-              }`}
-            >
+        <div className="letter-signature-block mt-10 space-y-8">
+          <div className="w-[75mm] max-w-full">
+            <p className="mb-8 border-b border-dotted border-gray-500 pb-1">
               {data.employeeName || "\u00A0"}
             </p>
             <p className="text-[10pt] text-gray-600">Name</p>
@@ -70,8 +68,8 @@ export const TermsConditionsLetterPreview = forwardRef<
             </p>
           </div>
 
-          <div>
-            <p className="mb-2 border-b border-dotted border-gray-500 pb-1 min-h-[1.5rem]">
+          <div className="w-[45mm] max-w-full">
+            <p className="mb-2 min-h-[1.5rem] border-b border-dotted border-gray-500 pb-1">
               {acknowledgmentDate || "\u00A0"}
             </p>
             <p className="text-[10pt] text-gray-600">Date</p>

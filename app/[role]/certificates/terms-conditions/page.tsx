@@ -10,7 +10,7 @@ import type { TermsConditionsLetterData } from "../_components/letter-types";
 import { TermsConditionsFormFields } from "../_components/terms-conditions-form-fields";
 import { TermsConditionsLetterPreview } from "../_components/terms-conditions-letter-preview";
 import { LetterPageLayout } from "../_components/letter-page-layout";
-import { getDefaultSignatoryFields } from "../_components/letter-defaults";
+import { getDefaultTermsConditionsFields } from "../_components/letter-defaults";
 import { letterPrintPageStyle } from "../_components/letter-utils";
 
 export default function TermsConditionsLetterPage() {
@@ -18,14 +18,7 @@ export default function TermsConditionsLetterPage() {
 
   const form = useForm<TermsConditionsLetterData>({
     resolver: zodResolver(termsConditionsLetterSchema) as any,
-    defaultValues: {
-      ...getDefaultSignatoryFields(),
-      employeeName: "",
-      jobTitle: "Assistant Teacher – Level 2",
-      reportingTo: "Principal, S R School of Excellence",
-      noticePeriodMonths: 2,
-      acknowledgmentDate: "",
-    },
+    defaultValues: getDefaultTermsConditionsFields(),
   });
 
   const handlePrint = useReactToPrint({

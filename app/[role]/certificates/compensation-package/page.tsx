@@ -18,7 +18,7 @@ import { TermsConditionsFormFields } from "../_components/terms-conditions-form-
 import { AnnualIncrementLetterPreview, COMPENSATION_PACKAGE_SUBJECT } from "../_components/annual-increment-letter-preview";
 import { TermsConditionsLetterPreview } from "../_components/terms-conditions-letter-preview";
 import { LetterPageLayout } from "../_components/letter-page-layout";
-import { getDefaultSignatoryFields } from "../_components/letter-defaults";
+import { getDefaultSignatoryFields, getDefaultTermsConditionsFields } from "../_components/letter-defaults";
 import { letterPrintPageStyle } from "../_components/letter-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -43,14 +43,7 @@ export default function CompensationPackagePage() {
 
   const termsForm = useForm<TermsConditionsLetterData>({
     resolver: zodResolver(termsConditionsLetterSchema) as any,
-    defaultValues: {
-      ...getDefaultSignatoryFields(),
-      employeeName: "",
-      jobTitle: "Assistant Teacher – Level 2",
-      reportingTo: "Principal, S R School of Excellence",
-      noticePeriodMonths: 2,
-      acknowledgmentDate: "",
-    },
+    defaultValues: getDefaultTermsConditionsFields(),
   });
 
   const incrementData = incrementForm.watch();
