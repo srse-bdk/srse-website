@@ -1,4 +1,5 @@
 export * from "./staff.service";
+export * from "./attendance-reset.service";
 export * from "./attendance.service";
 export * from "./blog.service";
 export * from "./student.service";
@@ -17,4 +18,5 @@ export * from "./staff-leave-accrual.service";
 export * from "./student-gate-notification.service";
 export * from "./scanner-user.service";
 export * from "./scanner-login-notification.service";
+export * from "./gate-activity-reset.service";
 export * from "./notification-history.service";

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAppStore } from "@/hooks/use-app-store";
+import { AttendanceResetCard } from "@/app/[role]/attendance/_components/attendance-reset-card";
 import { BulkAttendanceForm } from "./_components/bulk-attendance-form";
 import { AttendanceCalendar } from "./_components/attendance-calendar";
 import { AttendanceTable } from "./_components/attendance-table";
@@ -11,6 +13,8 @@ import { Calendar, FileText, List, BarChart3 } from "lucide-react";
 
 export default function StudentAttendancePage() {
   const [activeTab, setActiveTab] = useState("mark");
+  const user = useAppStore((state) => state.user);
+  const isAdmin = user?.role === "admin";
 
   return (
     <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 pb-20">
@@ -29,6 +33,8 @@ export default function StudentAttendancePage() {
           </div>
         </div>
       </div>
+
+      {isAdmin ? <AttendanceResetCard /> : null}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid w-full grid-cols-2 h-auto gap-2 p-1 sm:flex sm:w-auto sm:gap-0 sm:p-1">

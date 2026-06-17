@@ -311,6 +311,19 @@ class StudentAttendanceService {
     });
   }
 
+  async deleteAll(actionBy = "admin"): Promise<number> {
+    const records = await this.getAll();
+    for (const record of records) {
+      if (!record.id) continue;
+      await mutate({
+        action: "delete",
+        path: `studentAttendance/${record.id}`,
+        actionBy,
+      });
+    }
+    return records.length;
+  }
+
   /**
    * Get student attendance analytics
    */

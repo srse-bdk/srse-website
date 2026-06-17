@@ -301,6 +301,19 @@ class AttendanceService {
       totalHours: Math.round(totalHours * 100) / 100,
     };
   }
+
+  async deleteAll(actionBy = "admin"): Promise<number> {
+    const records = await this.getAll();
+    for (const record of records) {
+      if (!record.id) continue;
+      await mutate({
+        action: "delete",
+        path: `attendance/${record.id}`,
+        actionBy,
+      });
+    }
+    return records.length;
+  }
 }
 
 export const attendanceService = new AttendanceService();

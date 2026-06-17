@@ -1,28 +1,34 @@
 "use client";
 
 import { format, isValid, parse } from "date-fns";
-import { BarChart3, List, LogIn, LogOut, MapPin, ScanLine } from "lucide-react";
+import { BarChart3, List, LogIn, LogOut, ScanLine } from "lucide-react";
 import { motion } from "motion/react";
 import { parseAsString, useQueryState } from "nuqs";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import type { User } from "@/lib/types/user.type";
 import { AdminAttendance } from "./admin-attendance";
 import { AdminAttendanceAnalytics } from "./admin-attendance-analytics";
 import { AdminAttendanceCharts } from "./admin-attendance-charts";
-import { AdminAttendanceMap } from "./admin-attendance-map";
 import { AttendanceFilters } from "./attendance-filters";
+import { AttendanceResetCard } from "./attendance-reset-card";
 import { GateScanner } from "./staff-gate-scanner";
 
 const tabs = [
-  { id: "map", label: "Map", icon: MapPin },
   { id: "list", label: "List", icon: List },
   { id: "charts", label: "Charts", icon: BarChart3 },
   { id: "scanner", label: "Gate Scanner", icon: ScanLine },
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
+
+function resolveTab(tab: string | null): TabId {
+  if (tab === "list" || tab === "charts" || tab === "scanner") {
+    return tab;
+  }
+  return "list";
+}
 
 export function AdminAttendanceView() {
 
@@ -35,8 +41,10 @@ export function AdminAttendanceView() {
 
   const [activeTab, setActiveTab] = useQueryState(
     "tab",
-    parseAsString.withDefault("map"),
+    parseAsString.withDefault("list"),
   );
+
+  const currentTab = resolveTab(activeTab);
 
   // Filter state management
   const [selectedStaffId, setSelectedStaffId] = useQueryState(
@@ -69,14 +77,15 @@ export function AdminAttendanceView() {
   return (
     <div className="container mx-auto p-4 sm:p-6 max-w-7xl space-y-6">
       <AdminAttendanceAnalytics />
+      <AttendanceResetCard />
 
       <Tabs
-        value={activeTab || "map"}
+        value={currentTab}
         onValueChange={(value) => setActiveTab(value as TabId)}
         className="w-full"
       >
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
-          <TabsList className="grid w-full lg:w-auto grid-cols-4 flex-shrink-0">
+          <TabsList className="grid w-full lg:w-auto grid-cols-3 flex-shrink-0">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -97,24 +106,9 @@ export function AdminAttendanceView() {
           />
         </div>
 
-        <TabsContent value="map" className="mt-0">
-          <motion.div
-            key={`map-${activeTab}`}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-          >
-            <AdminAttendanceMap
-              selectedStaffId={selectedStaffId || "all"}
-              dateStr={dateStr || format(new Date(), "yyyy-MM-dd")}
-            />
-          </motion.div>
-        </TabsContent>
-
         <TabsContent value="list" className="mt-0">
           <motion.div
-            key={`list-${activeTab}`}
+            key={`list-${currentTab}`}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
@@ -128,7 +122,7 @@ export function AdminAttendanceView() {
 
         <TabsContent value="charts" className="mt-0">
           <motion.div
-            key={`charts-${activeTab}`}
+            key={`charts-${currentTab}`}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
@@ -143,7 +137,7 @@ export function AdminAttendanceView() {
 
         <TabsContent value="scanner" className="mt-0">
           <motion.div
-            key={`scanner-${activeTab}`}
+            key={`scanner-${currentTab}`}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
