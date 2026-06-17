@@ -125,6 +125,12 @@ class StaffLeaveService {
       throw new Error("Leave type not found or inactive");
     }
 
+    if (!isAccrualLeaveCode(leaveType.code)) {
+      throw new Error(
+        "Only Casual Leave, Sick Leave, and Emergency Leave can be applied from the staff portal.",
+      );
+    }
+
     if (input.endDate < input.startDate) {
       throw new Error("End date must be on or after start date");
     }
@@ -155,7 +161,10 @@ class StaffLeaveService {
       actionBy,
     );
     const balances = await this.getBalanceSummary(input.staffId, year);
-    const typeBalance = balances.find((row) => row.leaveTypeId === leaveType.id);
+    const typeBalance = balances.find(
+      (row) =>
+        row.leaveTypeId === leaveType.id || row.code === leaveType.code,
+    );
     if (
       typeBalance?.usesQuarterlyAccrual &&
       typeBalance.remainingDays < totalDays
@@ -251,6 +260,11 @@ class StaffLeaveService {
       year,
       staffId,
     );
+    await staffLeaveAccrualService.repairAccrualLeaveTypeIds(
+      staffId,
+      year,
+      staffId,
+    );
 
     const { startDate, endDate } = getAcademicYearStartEnd(year);
     const leaveTypes = await leaveTypeService.getActive();
@@ -282,7 +296,11 @@ class StaffLeaveService {
         : 0;
       const { total: accruedDays, quarters: quartersCredited } =
         usesQuarterlyAccrual
-          ? staffLeaveAccrualService.sumAccruedDays(accruals, type.id)
+          ? staffLeaveAccrualService.sumAccruedDays(
+              accruals,
+              type.id,
+              type.code,
+            )
           : { total: type.maxDaysPerYear, quarters: 0 };
 
       const allocatedDays = usesQuarterlyAccrual
@@ -303,6 +321,22 @@ class StaffLeaveService {
         usesQuarterlyAccrual,
       };
     });
+  }
+
+  /** Staff portal: CL, SL, EL balances only (no LWP), in policy order. */
+  async getStaffPortalBalanceSummary(
+    staffId: string,
+    academicYear?: string,
+  ): Promise<StaffLeaveBalanceSummary[]> {
+    const summary = await this.getBalanceSummary(staffId, academicYear);
+    const order = { CL: 0, SL: 1, EL: 2 } as const;
+    return summary
+      .filter((item) => item.usesQuarterlyAccrual)
+      .sort(
+        (a, b) =>
+          (order[a.code as keyof typeof order] ?? 99) -
+          (order[b.code as keyof typeof order] ?? 99),
+      );
   }
 
   async findAbsentWorkingDays(
@@ -401,6 +435,61 @@ class StaffLeaveService {
 
     await flushGroup();
     return createdIds;
+  }
+
+  async deleteAllApplications(actionBy = "admin"): Promise<number> {
+    const all = await this.getAll();
+    for (const app of all) {
+      if (!app.id) continue;
+      await mutate({
+        action: "delete",
+        path: `staffLeaveApplications/${app.id}`,
+        actionBy,
+      });
+    }
+    return all.length;
+  }
+
+  /**
+   * Wipe all leave applications and accruals, apply policy caps (CL 4, SL 4, EL 4),
+   * and credit elapsed quarters (1 CL + 1 SL + 1 EL per quarter) for active staff.
+   */
+  async resetAllLeaveData(actionBy = "admin"): Promise<{
+    applicationsDeleted: number;
+    accrualsDeleted: number;
+    leaveTypesUpdated: number;
+    accrualsCreated: number;
+    accrualsUpdated: number;
+    staffProcessed: number;
+  }> {
+    const applicationsDeleted = await this.deleteAllApplications(actionBy);
+    const accrualsDeleted =
+      await staffLeaveAccrualService.deleteAll(actionBy);
+
+    await leaveTypeService.ensureAccrualTypesPresent(actionBy);
+    const leaveTypesUpdated =
+      await leaveTypeService.syncAccrualAnnualLimits(actionBy);
+
+    const { staffProcessed, accrualsCreated } =
+      await staffLeaveAccrualService.ensureQuarterlyAccrualsForAllStaff(
+        undefined,
+        actionBy,
+      );
+
+    const accrualsUpdated =
+      await staffLeaveAccrualService.syncAccrualDaysFromPolicy(
+        undefined,
+        actionBy,
+      );
+
+    return {
+      applicationsDeleted,
+      accrualsDeleted,
+      leaveTypesUpdated,
+      accrualsCreated,
+      accrualsUpdated,
+      staffProcessed,
+    };
   }
 }
 

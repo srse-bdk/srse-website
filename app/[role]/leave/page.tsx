@@ -13,7 +13,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/hooks/use-app-store";
 import { leaveTypeService, staffLeaveAccrualService } from "@/lib/services";
-import { QUARTERLY_ACCRUAL_DESCRIPTION } from "@/lib/config/leave-accrual";
+import { ANNUAL_ACCRUAL_DESCRIPTION, FULL_LEAVE_POLICY_DESCRIPTION } from "@/lib/config/leave-accrual";
+import { LeavePolicyResetCard } from "./_components/leave-policy-reset-card";
 import { StaffLeaveDashboard } from "./_components/staff-leave-dashboard";
 
 const ADMIN_SECTIONS = [
@@ -25,7 +26,7 @@ const ADMIN_SECTIONS = [
   },
   {
     title: "Leave Types",
-    description: "Quarterly accrual: 2 CL, 2 SL, 1 EL per quarter.",
+    description: ANNUAL_ACCRUAL_DESCRIPTION,
     href: "types",
     icon: Tags,
   },
@@ -52,8 +53,8 @@ export default function LeavePage() {
   useEffect(() => {
     if (!isAdmin) return;
     void (async () => {
-      await leaveTypeService.ensureDefaults();
-      await leaveTypeService.syncAccrualAnnualLimits();
+      await leaveTypeService.deduplicateByCode();
+      await leaveTypeService.ensureAccrualTypesPresent();
       await staffLeaveAccrualService.ensureQuarterlyAccrualsForAllStaff();
     })();
   }, [isAdmin]);
@@ -72,9 +73,10 @@ export default function LeavePage() {
         <h1 className="text-2xl font-bold">Leave Management</h1>
         <p className="text-muted-foreground">
           Configure holidays, leave types, and staff applications.{" "}
-          {QUARTERLY_ACCRUAL_DESCRIPTION}
+          {FULL_LEAVE_POLICY_DESCRIPTION}
         </p>
       </div>
+      <LeavePolicyResetCard />
       <div className="grid gap-4 sm:grid-cols-2">
         {ADMIN_SECTIONS.map((section) => {
           const Icon = section.icon;

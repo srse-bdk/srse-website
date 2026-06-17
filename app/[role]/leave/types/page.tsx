@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -19,9 +19,117 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
-import { leaveTypeService } from "@/lib/services";
-import { QUARTERLY_ACCRUAL_DESCRIPTION } from "@/lib/config/leave-accrual";
+import { leaveTypeService, staffLeaveAccrualService } from "@/lib/services";
+import {
+  ACCRUAL_LEAVE_CODES,
+  FULL_LEAVE_POLICY_DESCRIPTION,
+} from "@/lib/config/leave-accrual";
 import type { LeaveType } from "@/lib/types/leave.type";
+
+function LeaveTypeEditRow({
+  type,
+  onDelete,
+}: {
+  type: LeaveType;
+  onDelete: (id: string) => void;
+}) {
+  const [name, setName] = useState(type.name);
+  const [maxDays, setMaxDays] = useState(String(type.maxDaysPerYear));
+  const [isPaid, setIsPaid] = useState(type.isPaid !== false);
+  const [isActive, setIsActive] = useState(type.isActive !== false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setName(type.name);
+    setMaxDays(String(type.maxDaysPerYear));
+    setIsPaid(type.isPaid !== false);
+    setIsActive(type.isActive !== false);
+  }, [type]);
+
+  const isDirty =
+    name !== type.name ||
+    maxDays !== String(type.maxDaysPerYear) ||
+    isPaid !== (type.isPaid !== false) ||
+    isActive !== (type.isActive !== false);
+
+  const handleSave = async () => {
+    const parsedMaxDays = Number.parseInt(maxDays, 10);
+    if (!name.trim() || Number.isNaN(parsedMaxDays) || parsedMaxDays < 1) {
+      toast.error("Enter a valid name and max days.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await leaveTypeService.update(type.id, {
+        name: name.trim(),
+        maxDaysPerYear: parsedMaxDays,
+        isPaid,
+        isActive,
+      });
+      toast.success(`${type.code} updated`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Update failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <TableRow>
+      <TableCell className="font-medium">{type.code}</TableCell>
+      <TableCell>
+        <Input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className="min-w-[10rem]"
+        />
+      </TableCell>
+      <TableCell>
+        <Input
+          type="number"
+          min={1}
+          value={maxDays}
+          onChange={(event) => setMaxDays(event.target.value)}
+          className="w-20"
+        />
+      </TableCell>
+      <TableCell>
+        <Switch checked={isPaid} onCheckedChange={setIsPaid} />
+      </TableCell>
+      <TableCell>
+        <Switch checked={isActive} onCheckedChange={setIsActive} />
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            disabled={!isDirty || saving}
+            onClick={() => void handleSave()}
+            title="Save changes"
+          >
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Save className="size-4" />
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => onDelete(type.id)}
+            title="Delete leave type"
+          >
+            <Trash2 className="size-4 text-destructive" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
 
 export default function LeaveTypesPage() {
   const params = useParams();
@@ -35,15 +143,14 @@ export default function LeaveTypesPage() {
   );
 
   const [creating, setCreating] = useState(false);
+  const [syncingPolicy, setSyncingPolicy] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [maxDays, setMaxDays] = useState("12");
+  const [maxDays, setMaxDays] = useState("4");
   const [isPaid, setIsPaid] = useState(true);
 
   useEffect(() => {
-    leaveTypeService.ensureDefaults().then(() =>
-      leaveTypeService.syncAccrualAnnualLimits(),
-    );
+    void leaveTypeService.ensureAccrualTypesPresent();
   }, []);
 
   const handleCreate = async (event: React.FormEvent) => {
@@ -59,20 +166,11 @@ export default function LeaveTypesPage() {
       toast.success("Leave type created");
       setCode("");
       setName("");
-      setMaxDays("12");
+      setMaxDays("4");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create");
     } finally {
       setCreating(false);
-    }
-  };
-
-  const handleToggle = async (type: LeaveType, isActive: boolean) => {
-    try {
-      await leaveTypeService.update(type.id, { isActive });
-      toast.success("Leave type updated");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Update failed");
     }
   };
 
@@ -85,6 +183,25 @@ export default function LeaveTypesPage() {
     }
   };
 
+  const handleApplyPolicyCaps = async () => {
+    setSyncingPolicy(true);
+    try {
+      const [typesUpdated, accrualsUpdated] = await Promise.all([
+        leaveTypeService.syncAccrualAnnualLimits(),
+        staffLeaveAccrualService.syncAccrualDaysFromPolicy(),
+      ]);
+      toast.success(
+        `Policy applied. Updated ${typesUpdated} leave type cap(s) and ${accrualsUpdated} accrual record(s).`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to apply policy caps",
+      );
+    } finally {
+      setSyncingPolicy(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 sm:p-6 max-w-7xl space-y-6">
       <Button variant="ghost" size="sm" asChild>
@@ -94,16 +211,37 @@ export default function LeaveTypesPage() {
         </Link>
       </Button>
 
-      <div>
-        <h1 className="text-2xl font-bold">Leave Types</h1>
-        <p className="text-muted-foreground">
-          {QUARTERLY_ACCRUAL_DESCRIPTION} Annual caps: CL 8, SL 8, EL 4.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Leave Types</h1>
+          <p className="text-muted-foreground">{FULL_LEAVE_POLICY_DESCRIPTION}</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Edit names and max days below, then click save on each row. Changes
+            are no longer overwritten when you open this page.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={syncingPolicy}
+          onClick={() => void handleApplyPolicyCaps()}
+        >
+          {syncingPolicy ? (
+            <Loader2 className="mr-2 size-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-2 size-4" />
+          )}
+          Apply policy caps (CL/SL/EL)
+        </Button>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Add leave type</CardTitle>
+          <CardDescription>
+            Policy types: {ACCRUAL_LEAVE_CODES.join(", ")}. Other types (e.g.
+            LWP) can be added manually.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="grid gap-4 sm:grid-cols-4">
@@ -150,6 +288,10 @@ export default function LeaveTypesPage() {
       <Card>
         <CardHeader>
           <CardTitle>Configured types</CardTitle>
+          <CardDescription>
+            Click the save icon after editing a row. Max days for CL, SL, and EL
+            should match annual caps unless you have a special case.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -168,28 +310,11 @@ export default function LeaveTypesPage() {
               </TableHeader>
               <TableBody>
                 {types.map((type) => (
-                  <TableRow key={type.id}>
-                    <TableCell className="font-medium">{type.code}</TableCell>
-                    <TableCell>{type.name}</TableCell>
-                    <TableCell>{type.maxDaysPerYear}</TableCell>
-                    <TableCell>{type.isPaid !== false ? "Yes" : "No"}</TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={type.isActive !== false}
-                        onCheckedChange={(checked) => handleToggle(type, checked)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(type.id)}
-                      >
-                        <Trash2 className="size-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                  <LeaveTypeEditRow
+                    key={type.id}
+                    type={type}
+                    onDelete={handleDelete}
+                  />
                 ))}
               </TableBody>
             </Table>

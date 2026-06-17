@@ -6,6 +6,7 @@ import {
   getAnnualAccrualLimit,
   type AccrualLeaveCode,
 } from "@/lib/config/leave-accrual";
+import { isAccrualLeaveCode } from "@/lib/utils/leave-quarter";
 
 const DEFAULT_LEAVE_TYPES: LeaveTypeInput[] = [
   {
@@ -22,7 +23,7 @@ const DEFAULT_LEAVE_TYPES: LeaveTypeInput[] = [
   },
   {
     code: "EL",
-    name: "Earned Leave",
+    name: "Emergency Leave",
     maxDaysPerYear: getAnnualAccrualLimit("EL"),
     isPaid: true,
   },
@@ -36,9 +37,50 @@ class LeaveTypeService {
     return types.sort((a, b) => a.code.localeCompare(b.code));
   }
 
+  /** Remove duplicate rows that share the same code (keeps the first). */
+  async deduplicateByCode(actionBy = "admin"): Promise<number> {
+    const all = await this.getAll();
+    const seenCodes = new Set<string>();
+    let deleted = 0;
+
+    for (const type of all) {
+      const code = type.code.trim().toUpperCase();
+      if (seenCodes.has(code)) {
+        await this.delete(type.id, actionBy);
+        deleted += 1;
+        continue;
+      }
+      seenCodes.add(code);
+    }
+
+    return deleted;
+  }
+
   async getActive(): Promise<LeaveType[]> {
     const all = await this.getAll();
-    return all.filter((type) => type.isActive !== false);
+    const active = all.filter((type) => type.isActive !== false);
+    const byCode = new Map<string, LeaveType>();
+    for (const type of active) {
+      const code = type.code.trim().toUpperCase();
+      if (!byCode.has(code)) {
+        byCode.set(code, type);
+      }
+    }
+    return Array.from(byCode.values()).sort((a, b) =>
+      a.code.localeCompare(b.code),
+    );
+  }
+
+  /** CL, SL, EL only — shown in the staff self-service portal. */
+  async getStaffSelectable(): Promise<LeaveType[]> {
+    const active = await this.getActive();
+    return active
+      .filter((type) => isAccrualLeaveCode(type.code))
+      .sort(
+        (a, b) =>
+          ACCRUAL_LEAVE_CODES.indexOf(a.code as AccrualLeaveCode) -
+          ACCRUAL_LEAVE_CODES.indexOf(b.code as AccrualLeaveCode),
+      );
   }
 
   async getById(id: string): Promise<LeaveType | null> {
@@ -47,6 +89,7 @@ class LeaveTypeService {
     return { ...(data as LeaveType), id };
   }
 
+  /** Seed all leave types only when the collection is empty. */
   async ensureDefaults(actionBy = "admin"): Promise<number> {
     const existing = await this.getAll();
     if (existing.length > 0) return 0;
@@ -69,7 +112,25 @@ class LeaveTypeService {
     return DEFAULT_LEAVE_TYPES.length;
   }
 
-  /** Align CL/SL/EL annual caps with quarterly accrual policy (2+2+1 per quarter). */
+  /** Create any default leave type that is missing by code (does not overwrite existing rows). */
+  async ensureAccrualTypesPresent(actionBy = "admin"): Promise<number> {
+    const existing = await this.getAll();
+    const existingCodes = new Set(existing.map((type) => type.code));
+    let created = 0;
+
+    for (const type of DEFAULT_LEAVE_TYPES) {
+      if (existingCodes.has(type.code)) continue;
+      await this.create(type, actionBy);
+      created += 1;
+    }
+
+    return created;
+  }
+
+  /**
+   * Apply configured policy caps to CL/SL/EL maxDaysPerYear.
+   * Call explicitly (e.g. policy reset) — not on every page load.
+   */
   async syncAccrualAnnualLimits(actionBy = "admin"): Promise<number> {
     const types = await this.getAll();
     let updated = 0;

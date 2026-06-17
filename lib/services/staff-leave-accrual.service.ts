@@ -9,6 +9,7 @@ import type { StaffLeaveAccrual } from "@/lib/types/leave.type";
 import type { User } from "@/lib/types/user.type";
 import { getAcademicYear } from "@/lib/utils/academic-year";
 import { getDueQuarters } from "@/lib/utils/leave-quarter";
+import { isAccrualLeaveCode } from "@/lib/utils/leave-quarter";
 import { leaveTypeService } from "./leave-type.service";
 
 class StaffLeaveAccrualService {
@@ -94,6 +95,43 @@ class StaffLeaveAccrualService {
     return created;
   }
 
+  /** Fix accrual rows that still point at an old leave type id after types were recreated. */
+  async repairAccrualLeaveTypeIds(
+    staffId: string,
+    academicYear?: string,
+    actionBy = "system",
+  ): Promise<number> {
+    const year = academicYear || getAcademicYear();
+    const leaveTypes = await leaveTypeService.getActive();
+    const codeToTypeId = new Map(
+      leaveTypes
+        .filter((type) => isAccrualLeaveCode(type.code))
+        .map((type) => [type.code, type.id]),
+    );
+
+    const accruals = await this.getByStaffAndYear(staffId, year);
+    let updated = 0;
+    const nowISO = new Date().toISOString();
+
+    for (const row of accruals) {
+      const expectedTypeId = codeToTypeId.get(row.leaveTypeCode);
+      if (!expectedTypeId || row.leaveTypeId === expectedTypeId) continue;
+
+      await mutate({
+        action: "update",
+        path: `staffLeaveAccruals/${row.id}`,
+        data: {
+          leaveTypeId: expectedTypeId,
+          updatedAt: nowISO,
+        },
+        actionBy,
+      });
+      updated += 1;
+    }
+
+    return updated;
+  }
+
   async ensureQuarterlyAccrualsForAllStaff(
     academicYear?: string,
     actionBy = "admin",
@@ -113,11 +151,63 @@ class StaffLeaveAccrualService {
     return { staffProcessed: staffList.length, accrualsCreated };
   }
 
+  async deleteAll(actionBy = "admin"): Promise<number> {
+    const all = await this.getAll();
+    for (const row of all) {
+      if (!row.id) continue;
+      await mutate({
+        action: "delete",
+        path: `staffLeaveAccruals/${row.id}`,
+        actionBy,
+      });
+    }
+    return all.length;
+  }
+
+  /** Update credited days on existing accrual rows to match current quarterly policy. */
+  async syncAccrualDaysFromPolicy(
+    academicYear?: string,
+    actionBy = "admin",
+  ): Promise<number> {
+    const year = academicYear || getAcademicYear();
+    const all = await this.getAll();
+    let updated = 0;
+    const nowISO = new Date().toISOString();
+
+    for (const row of all) {
+      if (row.academicYear !== year) continue;
+      if (!ACCRUAL_LEAVE_CODES.includes(row.leaveTypeCode as AccrualLeaveCode)) {
+        continue;
+      }
+
+      const expectedDays =
+        QUARTERLY_LEAVE_ACCRUAL[row.leaveTypeCode as AccrualLeaveCode];
+      if (row.days === expectedDays) continue;
+
+      await mutate({
+        action: "update",
+        path: `staffLeaveAccruals/${row.id}`,
+        data: {
+          days: expectedDays,
+          updatedAt: nowISO,
+        },
+        actionBy,
+      });
+      updated += 1;
+    }
+
+    return updated;
+  }
+
   sumAccruedDays(
     accruals: StaffLeaveAccrual[],
     leaveTypeId: string,
+    leaveTypeCode: string,
   ): { total: number; quarters: number } {
-    const matching = accruals.filter((row) => row.leaveTypeId === leaveTypeId);
+    const matching = accruals.filter(
+      (row) =>
+        row.leaveTypeCode === leaveTypeCode || row.leaveTypeId === leaveTypeId,
+    );
     const total = matching.reduce((sum, row) => sum + row.days, 0);
     const quarters = new Set(matching.map((row) => row.quarterKey)).size;
     return { total, quarters };

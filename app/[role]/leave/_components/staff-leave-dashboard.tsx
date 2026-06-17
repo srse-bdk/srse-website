@@ -19,9 +19,16 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useAppStore } from "@/hooks/use-app-store";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
-import { leaveTypeService, staffLeaveService } from "@/lib/services";
+import {
+  leaveTypeService,
+  staffLeaveAccrualService,
+  staffLeaveService,
+} from "@/lib/services";
 import type { LeaveType, StaffLeaveApplication } from "@/lib/types/leave.type";
-import { QUARTERLY_ACCRUAL_DESCRIPTION } from "@/lib/config/leave-accrual";
+import {
+  ACCRUAL_LEAVE_CODES,
+  FULL_LEAVE_POLICY_DESCRIPTION,
+} from "@/lib/config/leave-accrual";
 import { getAcademicYear } from "@/lib/utils/academic-year";
 import { formatDateTime } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +42,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export function StaffLeaveDashboard() {
   const user = useAppStore((state) => state.user);
-  const staffId = user?.uid || "";
+  const staffId = user?.uid || user?.id || "";
   const academicYear = getAcademicYear();
 
   const { data: applicationsData, loading } = useFirebaseRealtime<StaffLeaveApplication>(
@@ -45,7 +52,7 @@ export function StaffLeaveDashboard() {
 
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [balance, setBalance] = useState<
-    Awaited<ReturnType<typeof staffLeaveService.getBalanceSummary>>
+    Awaited<ReturnType<typeof staffLeaveService.getStaffPortalBalanceSummary>>
   >([]);
   const [loadingBalance, setLoadingBalance] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -69,19 +76,52 @@ export function StaffLeaveDashboard() {
       .sort((a, b) => b.appliedAt - a.appliedAt);
   }, [applicationsData, staffId]);
 
+  const portalBalance = useMemo(
+    () =>
+      balance.filter((item) =>
+        ACCRUAL_LEAVE_CODES.includes(
+          item.code as (typeof ACCRUAL_LEAVE_CODES)[number],
+        ),
+      ),
+    [balance],
+  );
+
+  const portalLeaveTypes = useMemo(
+    () =>
+      leaveTypes.filter((type) =>
+        ACCRUAL_LEAVE_CODES.includes(
+          type.code as (typeof ACCRUAL_LEAVE_CODES)[number],
+        ),
+      ),
+    [leaveTypes],
+  );
+
   useEffect(() => {
     async function load() {
       try {
-        await leaveTypeService.ensureDefaults();
-        await leaveTypeService.syncAccrualAnnualLimits();
+        await leaveTypeService.deduplicateByCode();
+        await leaveTypeService.ensureAccrualTypesPresent();
+        await staffLeaveAccrualService.ensureQuarterlyAccrualsForStaff(
+          staffId,
+          academicYear,
+          staffId,
+        );
+        await staffLeaveAccrualService.repairAccrualLeaveTypeIds(
+          staffId,
+          academicYear,
+          staffId,
+        );
+
         const [types, summary] = await Promise.all([
-          leaveTypeService.getActive(),
-          staffLeaveService.getBalanceSummary(staffId, academicYear),
+          leaveTypeService.getStaffSelectable(),
+          staffLeaveService.getStaffPortalBalanceSummary(staffId, academicYear),
         ]);
         setLeaveTypes(types);
         setBalance(summary);
-        if (types.length > 0 && !leaveTypeId) {
-          setLeaveTypeId(types[0].id);
+        if (types.length > 0) {
+          setLeaveTypeId((current) =>
+            types.some((type) => type.id === current) ? current : types[0].id,
+          );
         }
       } catch (error) {
         toast.error(
@@ -92,7 +132,7 @@ export function StaffLeaveDashboard() {
       }
     }
     if (staffId) load();
-  }, [staffId, academicYear, leaveTypeId]);
+  }, [staffId, academicYear]);
 
   useEffect(() => {
     if (!startDate || !endDate || endDate < startDate) {
@@ -165,7 +205,10 @@ export function StaffLeaveDashboard() {
       setReason("");
       setStartDate("");
       setEndDate("");
-      const summary = await staffLeaveService.getBalanceSummary(staffId, academicYear);
+      const summary = await staffLeaveService.getStaffPortalBalanceSummary(
+        staffId,
+        academicYear,
+      );
       setBalance(summary);
     } catch (error) {
       toast.error(
@@ -200,38 +243,40 @@ export function StaffLeaveDashboard() {
       <div>
         <h1 className="text-2xl font-bold">My Leave</h1>
         <p className="text-muted-foreground">
-          Session {academicYear} — {QUARTERLY_ACCRUAL_DESCRIPTION}
+          Session {academicYear} — {FULL_LEAVE_POLICY_DESCRIPTION}
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {balance.map((item) => (
-          <Card key={item.leaveTypeId}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">{item.code}</CardTitle>
-              <CardDescription>{item.name}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{item.remainingDays}</p>
-              {item.usesQuarterlyAccrual ? (
+      {portalBalance.length === 0 ? (
+        <Alert>
+          <AlertDescription>
+            Leave balances are not available yet. Please contact the school
+            office if this continues after refreshing the page.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-3">
+          {portalBalance.map((item) => (
+            <Card key={item.leaveTypeId}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">{item.code}</CardTitle>
+                <CardDescription>{item.name}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{item.remainingDays}</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {item.accruedDays} accrued ({item.perQuarterDays}/quarter ×{" "}
                   {item.quartersCredited} quarter
                   {item.quartersCredited === 1 ? "" : "s"})
                   <br />
-                  {item.usedDays} used · {item.pendingDays} pending · session cap{" "}
+                  {item.usedDays} used · {item.pendingDays} pending · cap{" "}
                   {item.maxDaysPerYear}
                 </p>
-              ) : (
-                <p className="text-xs text-muted-foreground mt-1">
-                  remaining of {item.maxDaysPerYear} ({item.usedDays} used,{" "}
-                  {item.pendingDays} pending)
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -241,8 +286,8 @@ export function StaffLeaveDashboard() {
               Apply for Leave
             </CardTitle>
             <CardDescription>
-              Weekends and school holidays are excluded. CL, SL, and EL draw from
-              your quarterly balance.
+              Casual Leave, Sick Leave, and Emergency Leave only. Weekends and
+              school holidays are excluded.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -254,7 +299,7 @@ export function StaffLeaveDashboard() {
                     <SelectValue placeholder="Select leave type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {leaveTypes.map((type) => (
+                    {portalLeaveTypes.map((type) => (
                       <SelectItem key={type.id} value={type.id}>
                         {type.code} — {type.name}
                       </SelectItem>
@@ -315,7 +360,7 @@ export function StaffLeaveDashboard() {
                   rows={3}
                 />
               </div>
-              <Button type="submit" disabled={submitting}>
+              <Button type="submit" disabled={submitting || portalLeaveTypes.length === 0}>
                 {submitting ? "Submitting..." : "Submit application"}
               </Button>
             </form>

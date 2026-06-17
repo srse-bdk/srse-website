@@ -2,6 +2,13 @@ import type { AccrualLeaveCode } from "@/lib/config/leave-accrual";
 
 export type LeaveQuarter = 1 | 2 | 3 | 4;
 
+function toLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export interface AcademicYearQuarter {
   quarter: LeaveQuarter;
   key: string;
@@ -50,7 +57,7 @@ export function getDueQuarters(
   academicYear: string,
   asOf: Date = new Date(),
 ): AcademicYearQuarter[] {
-  const today = asOf.toISOString().split("T")[0];
+  const today = toLocalDateString(asOf);
   return getAcademicYearQuarters(academicYear).filter(
     (quarter) => quarter.accrualDate <= today,
   );
