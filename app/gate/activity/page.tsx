@@ -5,6 +5,7 @@ import { ArrowLeft, Bell, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ScannerLoginHistoryList } from "@/components/notifications/scanner-login-history-list";
 import { StudentGateHistoryList } from "@/components/notifications/student-gate-history-list";
+import { GateActivityResetCard } from "@/components/gate/gate-activity-reset-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -82,6 +83,8 @@ export default function GateActivityPage() {
           <CardContent className="py-4 text-sm text-destructive">{error}</CardContent>
         </Card>
       ) : null}
+
+      <GateActivityResetCard />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList>
