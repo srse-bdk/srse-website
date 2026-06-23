@@ -8,11 +8,21 @@ interface SchoolLetterheadProps {
   children: React.ReactNode;
   schoolLogo?: string;
   isPrint?: boolean;
+  skipLetterhead?: boolean;
   className?: string;
 }
 
 export const SchoolLetterhead = forwardRef<HTMLDivElement, SchoolLetterheadProps>(
-  ({ children, schoolLogo, isPrint = false, className = "" }, ref) => {
+  (
+    {
+      children,
+      schoolLogo,
+      isPrint = false,
+      skipLetterhead = false,
+      className = "",
+    },
+    ref,
+  ) => {
     const logo = schoolLogo || schoolLetterheadDefaults.schoolLogo;
 
     return (
@@ -57,7 +67,10 @@ export const SchoolLetterhead = forwardRef<HTMLDivElement, SchoolLetterheadProps
               : "min-h-[297mm] px-10 py-8 sm:px-12 sm:py-10"
           }`}
         >
-          <header className="shrink-0 text-center">
+          <header
+            className={`shrink-0 text-center ${skipLetterhead ? "invisible" : ""}`}
+            aria-hidden={skipLetterhead}
+          >
             <h1
               className="text-[22pt] font-bold tracking-wide text-[#1a4a8a]"
               style={{ fontFamily: "'Times New Roman', Times, serif" }}
@@ -74,7 +87,12 @@ export const SchoolLetterhead = forwardRef<HTMLDivElement, SchoolLetterheadProps
             {children}
           </main>
 
-          <footer className="letter-print-footer mt-auto shrink-0 border-t border-[#c45c26] pt-3 text-center text-[9pt] leading-relaxed text-gray-700">
+          <footer
+            className={`letter-print-footer mt-auto shrink-0 border-t border-[#c45c26] pt-3 text-center text-[9pt] leading-relaxed text-gray-700 ${
+              skipLetterhead ? "invisible" : ""
+            }`}
+            aria-hidden={skipLetterhead}
+          >
             <p>
               <strong>Address:</strong> {schoolLetterheadDefaults.schoolAddress}
             </p>

@@ -3,7 +3,7 @@
 import { forwardRef } from "react";
 import { SchoolLetterhead, SignatoryBlock } from "./school-letterhead";
 import type { OfficialExperienceLetterData } from "./letter-types";
-import { formatLetterDate, getDearName } from "./letter-utils";
+import { formatLetterDate } from "./letter-utils";
 import { schoolLetterheadDefaults } from "@/lib/config/school-letterhead";
 
 interface ExperienceLetterPreviewProps {
@@ -15,7 +15,6 @@ export const ExperienceLetterPreview = forwardRef<
   HTMLDivElement,
   ExperienceLetterPreviewProps
 >(({ data, isPrint = false }, ref) => {
-  const letterDate = formatLetterDate(data.letterDate);
   const startDate = formatLetterDate(data.startDate, "dd/MM/yyyy");
   const endDate = data.endDate
     ? formatLetterDate(data.endDate, "dd/MM/yyyy")
@@ -35,26 +34,22 @@ export const ExperienceLetterPreview = forwardRef<
       ref={ref}
       schoolLogo={data.schoolLogo}
       isPrint={isPrint}
+      skipLetterhead={data.skipLetterhead}
     >
       <div className="space-y-4">
-        <p>{letterDate}</p>
-
-        <div className="space-y-0.5">
-          {data.employeeId ? <p>Ref - {data.employeeId}</p> : null}
-          <p>{data.personName}</p>
-          {data.location ? <p>{data.location}</p> : null}
-        </div>
-
-        <p className="font-bold underline">Sub: Experience Certificate</p>
-
-        <p>To Whom It May Concern,</p>
+        <p
+          className={`text-center font-bold underline${
+            data.skipLetterhead ? " mt-[3em] mb-[3em]" : ""
+          }`}
+        >
+          To Whom It May Concern
+        </p>
 
         <p>
           This is to certify that <strong>{data.personName}</strong> was employed
           at {schoolLetterheadDefaults.schoolName} as{" "}
           <strong>{data.designation}</strong> from <strong>{startDate}</strong> to{" "}
-          <strong>{endDate}</strong>.
-          {pronoun} discharged {possessive} duties with sincerity, dedication, and
+          <strong>{endDate}</strong>. {pronoun} discharged {possessive} duties with sincerity, dedication, and
           professionalism during the period of service.
         </p>
 

@@ -40,14 +40,12 @@ export const termsConditionsLetterSchema = personSelectionSchema
 export const officialExperienceLetterSchema = personSelectionSchema
   .merge(signatorySchema)
   .extend({
-    letterDate: z.string().min(1, "Letter date is required"),
-    employeeId: z.string().optional(),
     personName: z.string().min(1, "Name is required"),
     designation: z.string().min(1, "Designation is required"),
-    location: z.string().optional(),
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().optional(),
     additionalParagraph: z.string().optional(),
+    skipLetterhead: z.boolean(),
   });
 
 export const officialAppointmentLetterSchema = personSelectionSchema

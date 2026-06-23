@@ -20,14 +20,12 @@ export default function ExperienceCertificatePage() {
     resolver: zodResolver(officialExperienceLetterSchema) as any,
     defaultValues: {
       ...getDefaultSignatoryFields(),
-      letterDate: new Date().toISOString(),
-      employeeId: "",
       personName: "",
       designation: "",
-      location: "Bhadrak",
       startDate: "",
       endDate: "",
       additionalParagraph: "",
+      skipLetterhead: false,
     },
   });
 

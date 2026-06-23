@@ -4,7 +4,7 @@ export const schoolLetterheadDefaults = {
   schoolAddress:
     "Acharya Nagar, Near Bont Square, Bhadrak, Odisha – 756100",
   schoolEmail: "srschoolofexcellence@gmail.com",
-  schoolWebsite: "https://www.rnrayeducation.in",
+  schoolWebsite: "https://www.srse.rnray.in",
   schoolLogo: "/logo.png",
   signatoryName: "Pankaj Mohanty",
   signatoryTitle: "Secretary and Trusty, RN Ray Educational Charitable Trust",

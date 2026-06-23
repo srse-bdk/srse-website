@@ -5,8 +5,8 @@ export const marketingSite = {
     "S R School of Excellence - A premier educational institution owned and managed by Ram Narayan Ray Educational Charitable Trust, providing quality education with modern facilities and compassionate care.",
   tagline:
     "Excellence in Education, Nurturing Tomorrow's Leaders - Founded in January 2016",
-  url: "https://rnrayeducation.in",
-  domain: "rnrayeducation.in",
+  url: "https://www.srse.rnray.in",
+  domain: "www.srse.rnray.in",
   contactEmail: "srschoolofexcellence@gmail.com",
   contactPhone: "9438465475",
   contactPhones: ["9438465475", "9437530949"],
