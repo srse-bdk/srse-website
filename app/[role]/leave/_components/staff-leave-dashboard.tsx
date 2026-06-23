@@ -289,7 +289,7 @@ export function StaffLeaveDashboard() {
             <strong>Special Leave (exam / medical):</strong>
           </p>
           <p>
-            Granted by admin only after Principal recommendation. You cannot
+            Granted by admin only after Principal&apos;s recommendation. You cannot
             apply online.
           </p>
           <p>

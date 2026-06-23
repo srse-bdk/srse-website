@@ -266,7 +266,7 @@ class StaffLeaveService {
       throw new Error("Reason is required (e.g. exam or medical case).");
     }
     if (!principalRecommendation) {
-      throw new Error("Principal recommendation is required.");
+      throw new Error("Principal's recommendation is required.");
     }
 
     const totalDays = await this.countWorkingLeaveDays(
@@ -318,7 +318,7 @@ class StaffLeaveService {
         source: "admin_grant",
         reviewedBy: actionBy,
         reviewedAt: now,
-        reviewNotes: `Principal recommendation: ${principalRecommendation}`,
+        reviewNotes: `Principal's recommendation: ${principalRecommendation}`,
         createdAt: nowISO,
         updatedAt: nowISO,
       },

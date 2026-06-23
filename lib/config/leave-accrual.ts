@@ -32,9 +32,9 @@ export function getQuarterlyAccrualDays(code: AccrualLeaveCode): number {
   return QUARTERLY_LEAVE_ACCRUAL[code];
 }
 
-/** Admin-granted only (exam / medical under Principal recommendation). Not self-service. */
+/** Admin-granted only (exam / medical under Principal's recommendation). Not self-service. */
 export const SPECIAL_LEAVE_CODE = "SPL";
 export const SPECIAL_LEAVE_MAX_DAYS_PER_YEAR = 5;
 export const SPECIAL_LEAVE_NAME = "Special Leave (Exam / Medical)";
 export const SPECIAL_LEAVE_DESCRIPTION =
-  "Up to 5 days per year. Granted by admin only after Principal recommendation. Staff cannot apply online.";
+  "Up to 5 days per year. Granted by admin only after Principal's recommendation. Staff cannot apply online.";

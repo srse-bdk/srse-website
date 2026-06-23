@@ -260,7 +260,7 @@ export default function GrantSpecialLeavePage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="spl-principal">Principal recommendation</Label>
+              <Label htmlFor="spl-principal">Principal&apos;s recommendation</Label>
               <Textarea
                 id="spl-principal"
                 value={principalRecommendation}
