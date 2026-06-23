@@ -1,7 +1,6 @@
 import {
   ArrowRightLeft,
   Award,
-  Baby,
   BadgeIndianRupee,
   Bell,
   BookOpen,
@@ -20,6 +19,7 @@ import {
   LogIn,
   List,
   LogOut,
+  MessageSquare,
   Printer,
   ScanLine,
   Settings,
@@ -117,6 +117,12 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     roles: ["admin"],
   },
   {
+    title: "Testimonials",
+    url: "/testimonials",
+    icon: MessageSquare,
+    roles: ["admin"],
+  },
+  {
     title: "Send Notifications",
     url: "/notifications",
     icon: Bell,
@@ -207,12 +213,6 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     ],
   },
   {
-    title: "Parents",
-    url: "/parents",
-    icon: Users,
-    roles: ["admin"],
-  },
-  {
     title: "Video Management",
     url: "/video-management",
     icon: Video,
@@ -294,33 +294,6 @@ function buildStudentNavigation(studentId?: string): NavigationItem[] {
   return items;
 }
 
-const PARENT_NAVIGATION: NavigationItem[] = [
-  {
-    title: "Dashboard",
-    url: "/dashboard",
-    icon: Home,
-    roles: ["parent"],
-  },
-  {
-    title: "My Children",
-    url: "/children",
-    icon: Baby,
-    roles: ["parent"],
-  },
-  {
-    title: "Fee Details",
-    url: "/fees",
-    icon: Wallet,
-    roles: ["parent"],
-  },
-  {
-    title: "Time Table",
-    url: "/time-table",
-    icon: CalendarClock,
-    roles: ["parent"],
-  },
-];
-
 export function useMenuItems() {
   const user = useAppStore((state) => state.user);
   const role = user?.role;
@@ -335,7 +308,7 @@ export function useMenuItems() {
       case "student":
         return buildStudentNavigation(user.studentId);
       case "parent":
-        return PARENT_NAVIGATION;
+        return [];
       default:
         return [];
     }

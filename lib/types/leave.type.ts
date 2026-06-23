@@ -6,7 +6,10 @@ export type LeaveApplicationStatus =
   | "rejected"
   | "cancelled";
 
-export type LeaveApplicationSource = "application" | "absent_conversion";
+export type LeaveApplicationSource =
+  | "application"
+  | "absent_conversion"
+  | "admin_grant";
 
 export interface LeaveType extends BaseEntity {
   code: string;

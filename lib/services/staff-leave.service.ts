@@ -11,7 +11,7 @@ import {
   QUARTERLY_LEAVE_ACCRUAL,
   type AccrualLeaveCode,
 } from "@/lib/config/leave-accrual";
-import { isAccrualLeaveCode } from "@/lib/utils/leave-quarter";
+import { isAccrualLeaveCode, isSpecialLeaveCode } from "@/lib/utils/leave-quarter";
 import {
   countDaysInclusive,
   eachDateInRange,
@@ -125,7 +125,7 @@ class StaffLeaveService {
       throw new Error("Leave type not found or inactive");
     }
 
-    if (!isAccrualLeaveCode(leaveType.code)) {
+    if (!isAccrualLeaveCode(leaveType.code) || isSpecialLeaveCode(leaveType.code)) {
       throw new Error(
         "Only Casual Leave, Sick Leave, and Emergency Leave can be applied from the staff portal.",
       );
@@ -228,6 +228,101 @@ class StaffLeaveService {
         updatedAt: new Date().toISOString(),
       },
       actionBy: reviewedBy,
+    });
+  }
+
+  async getSpecialLeaveBalance(
+    staffId: string,
+    academicYear?: string,
+  ): Promise<StaffLeaveBalanceSummary | null> {
+    const summary = await this.getBalanceSummary(staffId, academicYear);
+    return summary.find((row) => isSpecialLeaveCode(row.code)) ?? null;
+  }
+
+  async grantSpecialLeaveByAdmin(
+    input: {
+      staffId: string;
+      staffName: string;
+      startDate: string;
+      endDate: string;
+      reason: string;
+      principalRecommendation: string;
+    },
+    actionBy: string,
+  ): Promise<string> {
+    await leaveTypeService.ensureSpecialLeaveTypePresent(actionBy);
+    const leaveType = await leaveTypeService.getSpecialLeaveType();
+    if (!leaveType || leaveType.isActive === false) {
+      throw new Error("Special Leave type is not configured.");
+    }
+
+    if (input.endDate < input.startDate) {
+      throw new Error("End date must be on or after start date");
+    }
+
+    const reason = input.reason.trim();
+    const principalRecommendation = input.principalRecommendation.trim();
+    if (!reason) {
+      throw new Error("Reason is required (e.g. exam or medical case).");
+    }
+    if (!principalRecommendation) {
+      throw new Error("Principal recommendation is required.");
+    }
+
+    const totalDays = await this.countWorkingLeaveDays(
+      input.startDate,
+      input.endDate,
+    );
+    if (totalDays <= 0) {
+      throw new Error("Selected dates fall only on approved holidays");
+    }
+
+    const overlapping = (await this.getByStaffId(input.staffId)).some(
+      (app) =>
+        app.status !== "rejected" &&
+        app.status !== "cancelled" &&
+        app.endDate >= input.startDate &&
+        app.startDate <= input.endDate,
+    );
+    if (overlapping) {
+      throw new Error("Leave dates overlap with an existing application");
+    }
+
+    const year = getAcademicYear();
+    const balance = await this.getSpecialLeaveBalance(input.staffId, year);
+    const remaining = balance?.remainingDays ?? 0;
+    if (remaining < totalDays) {
+      throw new Error(
+        `Insufficient Special Leave balance. Available: ${remaining}, requested: ${totalDays} (max ${leaveType.maxDaysPerYear} days per year).`,
+      );
+    }
+
+    const now = Date.now();
+    const nowISO = new Date().toISOString();
+
+    return mutate({
+      action: "createWithId",
+      path: "staffLeaveApplications",
+      data: {
+        staffId: input.staffId,
+        staffName: input.staffName,
+        leaveTypeId: leaveType.id,
+        leaveTypeCode: leaveType.code,
+        leaveTypeName: leaveType.name,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        totalDays,
+        reason,
+        status: "approved",
+        appliedAt: now,
+        source: "admin_grant",
+        reviewedBy: actionBy,
+        reviewedAt: now,
+        reviewNotes: `Principal recommendation: ${principalRecommendation}`,
+        createdAt: nowISO,
+        updatedAt: nowISO,
+      },
+      actionBy,
     });
   }
 
@@ -467,6 +562,7 @@ class StaffLeaveService {
       await staffLeaveAccrualService.deleteAll(actionBy);
 
     await leaveTypeService.ensureAccrualTypesPresent(actionBy);
+    await leaveTypeService.ensureSpecialLeaveTypePresent(actionBy);
     const leaveTypesUpdated =
       await leaveTypeService.syncAccrualAnnualLimits(actionBy);
 

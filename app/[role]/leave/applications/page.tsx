@@ -136,7 +136,11 @@ export default function LeaveApplicationsPage() {
                     <TableCell>
                       <Badge variant="outline" className="capitalize">
                         {app.status}
-                        {app.source === "absent_conversion" ? " · converted" : ""}
+                        {app.source === "absent_conversion"
+                          ? " · converted"
+                          : app.source === "admin_grant"
+                            ? " · admin grant"
+                            : ""}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">

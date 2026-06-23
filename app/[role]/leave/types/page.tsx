@@ -151,6 +151,7 @@ export default function LeaveTypesPage() {
 
   useEffect(() => {
     void leaveTypeService.ensureAccrualTypesPresent();
+    void leaveTypeService.ensureSpecialLeaveTypePresent();
   }, []);
 
   const handleCreate = async (event: React.FormEvent) => {
@@ -239,7 +240,8 @@ export default function LeaveTypesPage() {
         <CardHeader>
           <CardTitle>Add leave type</CardTitle>
           <CardDescription>
-            Policy types: {ACCRUAL_LEAVE_CODES.join(", ")}. Other types (e.g.
+            Policy types: {ACCRUAL_LEAVE_CODES.join(", ")}. Special Leave (SPL) is
+            created by admin only — use Grant Special Leave. Other types (e.g.
             LWP) can be added manually.
           </CardDescription>
         </CardHeader>

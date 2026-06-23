@@ -20,3 +20,4 @@ export * from "./scanner-user.service";
 export * from "./scanner-login-notification.service";
 export * from "./gate-activity-reset.service";
 export * from "./notification-history.service";
+export * from "./testimonial.service";

@@ -66,3 +66,7 @@ export function getDueQuarters(
 export function isAccrualLeaveCode(code: string): code is AccrualLeaveCode {
   return code === "CL" || code === "SL" || code === "EL";
 }
+
+export function isSpecialLeaveCode(code: string): boolean {
+  return code.trim().toUpperCase() === "SPL";
+}

@@ -4,11 +4,14 @@ import type { LeaveType, LeaveTypeInput } from "@/lib/types/leave.type";
 import {
   ACCRUAL_LEAVE_CODES,
   getAnnualAccrualLimit,
+  SPECIAL_LEAVE_CODE,
+  SPECIAL_LEAVE_MAX_DAYS_PER_YEAR,
+  SPECIAL_LEAVE_NAME,
   type AccrualLeaveCode,
 } from "@/lib/config/leave-accrual";
-import { isAccrualLeaveCode } from "@/lib/utils/leave-quarter";
+import { isAccrualLeaveCode, isSpecialLeaveCode } from "@/lib/utils/leave-quarter";
 
-const DEFAULT_LEAVE_TYPES: LeaveTypeInput[] = [
+const ACCRUAL_LEAVE_TYPE_DEFAULTS: LeaveTypeInput[] = [
   {
     code: "CL",
     name: "Casual Leave",
@@ -27,6 +30,10 @@ const DEFAULT_LEAVE_TYPES: LeaveTypeInput[] = [
     maxDaysPerYear: getAnnualAccrualLimit("EL"),
     isPaid: true,
   },
+];
+
+const DEFAULT_LEAVE_TYPES: LeaveTypeInput[] = [
+  ...ACCRUAL_LEAVE_TYPE_DEFAULTS,
   { code: "LWP", name: "Leave Without Pay", maxDaysPerYear: 30, isPaid: false },
 ];
 
@@ -75,12 +82,44 @@ class LeaveTypeService {
   async getStaffSelectable(): Promise<LeaveType[]> {
     const active = await this.getActive();
     return active
-      .filter((type) => isAccrualLeaveCode(type.code))
+      .filter(
+        (type) =>
+          isAccrualLeaveCode(type.code) && !isSpecialLeaveCode(type.code),
+      )
       .sort(
         (a, b) =>
           ACCRUAL_LEAVE_CODES.indexOf(a.code as AccrualLeaveCode) -
           ACCRUAL_LEAVE_CODES.indexOf(b.code as AccrualLeaveCode),
       );
+  }
+
+  async getSpecialLeaveType(): Promise<LeaveType | null> {
+    const active = await this.getActive();
+    return (
+      active.find((type) => isSpecialLeaveCode(type.code)) ??
+      active.find((type) => type.code === SPECIAL_LEAVE_CODE) ??
+      null
+    );
+  }
+
+  /** Ensures SPL exists (admin-granted exam / medical leave, max 5 days/year). */
+  async ensureSpecialLeaveTypePresent(actionBy = "admin"): Promise<number> {
+    const existing = await this.getAll();
+    const hasSpl = existing.some((type) => isSpecialLeaveCode(type.code));
+    if (hasSpl) return 0;
+
+    await this.create(
+      {
+        code: SPECIAL_LEAVE_CODE,
+        name: SPECIAL_LEAVE_NAME,
+        maxDaysPerYear: SPECIAL_LEAVE_MAX_DAYS_PER_YEAR,
+        isPaid: true,
+        requiresApproval: true,
+        isActive: true,
+      },
+      actionBy,
+    );
+    return 1;
   }
 
   async getById(id: string): Promise<LeaveType | null> {
@@ -118,7 +157,7 @@ class LeaveTypeService {
     const existingCodes = new Set(existing.map((type) => type.code));
     let created = 0;
 
-    for (const type of DEFAULT_LEAVE_TYPES) {
+    for (const type of ACCRUAL_LEAVE_TYPE_DEFAULTS) {
       if (existingCodes.has(type.code)) continue;
       await this.create(type, actionBy);
       created += 1;
@@ -141,6 +180,16 @@ class LeaveTypeService {
       const limit = getAnnualAccrualLimit(code as AccrualLeaveCode);
       if (type.maxDaysPerYear === limit) continue;
       await this.update(type.id, { maxDaysPerYear: limit }, actionBy);
+      updated += 1;
+    }
+
+    const spl = types.find((row) => isSpecialLeaveCode(row.code));
+    if (spl && spl.maxDaysPerYear !== SPECIAL_LEAVE_MAX_DAYS_PER_YEAR) {
+      await this.update(
+        spl.id,
+        { maxDaysPerYear: SPECIAL_LEAVE_MAX_DAYS_PER_YEAR },
+        actionBy,
+      );
       updated += 1;
     }
 

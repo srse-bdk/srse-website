@@ -7,13 +7,14 @@ import {
   ArrowRightLeft,
   Calendar,
   ClipboardList,
+  ShieldCheck,
   Tags,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/hooks/use-app-store";
 import { leaveTypeService, staffLeaveAccrualService } from "@/lib/services";
-import { ANNUAL_ACCRUAL_DESCRIPTION, FULL_LEAVE_POLICY_DESCRIPTION } from "@/lib/config/leave-accrual";
+import { ANNUAL_ACCRUAL_DESCRIPTION, FULL_LEAVE_POLICY_DESCRIPTION, SPECIAL_LEAVE_DESCRIPTION } from "@/lib/config/leave-accrual";
 import { LeavePolicyResetCard } from "./_components/leave-policy-reset-card";
 import { StaffLeaveDashboard } from "./_components/staff-leave-dashboard";
 
@@ -37,6 +38,12 @@ const ADMIN_SECTIONS = [
     icon: ClipboardList,
   },
   {
+    title: "Grant Special Leave",
+    description: SPECIAL_LEAVE_DESCRIPTION,
+    href: "grant-special",
+    icon: ShieldCheck,
+  },
+  {
     title: "Convert Absences",
     description: "Mark recorded absences as approved leave.",
     href: "convert",
@@ -55,6 +62,7 @@ export default function LeavePage() {
     void (async () => {
       await leaveTypeService.deduplicateByCode();
       await leaveTypeService.ensureAccrualTypesPresent();
+      await leaveTypeService.ensureSpecialLeaveTypePresent();
       await staffLeaveAccrualService.ensureQuarterlyAccrualsForAllStaff();
     })();
   }, [isAdmin]);

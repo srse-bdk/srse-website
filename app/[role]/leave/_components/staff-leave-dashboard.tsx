@@ -54,6 +54,9 @@ export function StaffLeaveDashboard() {
   const [balance, setBalance] = useState<
     Awaited<ReturnType<typeof staffLeaveService.getStaffPortalBalanceSummary>>
   >([]);
+  const [specialLeaveBalance, setSpecialLeaveBalance] = useState<
+    Awaited<ReturnType<typeof staffLeaveService.getSpecialLeaveBalance>>
+  >(null);
   const [loadingBalance, setLoadingBalance] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -112,12 +115,14 @@ export function StaffLeaveDashboard() {
           staffId,
         );
 
-        const [types, summary] = await Promise.all([
+        const [types, summary, spl] = await Promise.all([
           leaveTypeService.getStaffSelectable(),
           staffLeaveService.getStaffPortalBalanceSummary(staffId, academicYear),
+          staffLeaveService.getSpecialLeaveBalance(staffId, academicYear),
         ]);
         setLeaveTypes(types);
         setBalance(summary);
+        setSpecialLeaveBalance(spl);
         if (types.length > 0) {
           setLeaveTypeId((current) =>
             types.some((type) => type.id === current) ? current : types[0].id,
@@ -278,6 +283,23 @@ export function StaffLeaveDashboard() {
         </div>
       )}
 
+      <Alert>
+        <AlertDescription className="space-y-1 text-sm">
+          <p>
+            <strong>Special Leave (exam / medical):</strong>
+          </p>
+          <p>
+            Granted by admin only after Principal recommendation. You cannot
+            apply online.
+          </p>
+          <p>
+            Number of SPL granted:{" "}
+            {specialLeaveBalance?.usedDays ?? 0} day
+            {(specialLeaveBalance?.usedDays ?? 0) === 1 ? "" : "s"}
+          </p>
+        </AlertDescription>
+      </Alert>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -389,6 +411,7 @@ export function StaffLeaveDashboard() {
                     </span>
                     <Badge className={STATUS_COLORS[app.status] || ""}>
                       {app.status}
+                      {app.source === "admin_grant" ? " · granted" : ""}
                     </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
