@@ -16,6 +16,7 @@ import { useAppStore } from "@/hooks/use-app-store";
 import { leaveTypeService, staffLeaveAccrualService } from "@/lib/services";
 import { ANNUAL_ACCRUAL_DESCRIPTION, FULL_LEAVE_POLICY_DESCRIPTION, SPECIAL_LEAVE_DESCRIPTION } from "@/lib/config/leave-accrual";
 import { LeavePolicyResetCard } from "./_components/leave-policy-reset-card";
+import { AdminStaffLeaveOverview } from "./_components/admin-staff-leave-overview";
 import { StaffLeaveDashboard } from "./_components/staff-leave-dashboard";
 
 const ADMIN_SECTIONS = [
@@ -84,6 +85,7 @@ export default function LeavePage() {
           {FULL_LEAVE_POLICY_DESCRIPTION}
         </p>
       </div>
+      <AdminStaffLeaveOverview />
       <LeavePolicyResetCard />
       <div className="grid gap-4 sm:grid-cols-2">
         {ADMIN_SECTIONS.map((section) => {
