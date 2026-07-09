@@ -64,6 +64,7 @@ export default function LeavePage() {
       await leaveTypeService.deduplicateByCode();
       await leaveTypeService.ensureAccrualTypesPresent();
       await leaveTypeService.ensureSpecialLeaveTypePresent();
+      await leaveTypeService.syncAccrualAnnualLimits();
       await staffLeaveAccrualService.ensureQuarterlyAccrualsForAllStaff();
     })();
   }, [isAdmin]);

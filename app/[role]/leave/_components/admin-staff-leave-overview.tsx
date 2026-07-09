@@ -3,15 +3,19 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronRight,
   ClipboardList,
   Loader2,
   Search,
   Users,
+  Wrench,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
-import { staffLeaveService } from "@/lib/services";
+import { staffLeaveAccrualService, staffLeaveService } from "@/lib/services";
 import type {
   StaffLeaveApplication,
   StaffLeaveBalanceSummary,
@@ -55,16 +59,63 @@ function formatBalanceCell(balance?: StaffLeaveBalanceSummary) {
   if (!balance) return "—";
   const pending =
     balance.pendingDays > 0 ? ` · ${balance.pendingDays} pending` : "";
+  const mismatch =
+    balance.usesQuarterlyAccrual &&
+    balance.accruedDays !==
+      balance.quartersCredited * balance.perQuarterDays;
   return (
     <span className="text-xs leading-snug">
       <span className="font-semibold">{balance.usedDays}</span>
       <span className="text-muted-foreground">/{balance.accruedDays}</span>
       <span className="text-muted-foreground"> · </span>
-      <span className="font-medium text-emerald-700">{balance.remainingDays} left</span>
+      <span
+        className={cn(
+          "font-medium",
+          mismatch ? "text-amber-700" : "text-emerald-700",
+        )}
+      >
+        {balance.remainingDays} left
+      </span>
       {pending ? (
         <span className="text-amber-700">{pending}</span>
       ) : null}
     </span>
+  );
+}
+
+function needsAccrualRepair(balances: StaffLeaveBalanceSummary[]): boolean {
+  return balances.some(
+    (b) =>
+      b.usesQuarterlyAccrual &&
+      b.accruedDays !== b.quartersCredited * b.perQuarterDays,
+  );
+}
+
+async function loadStaffLeaveRows(
+  staffs: User[],
+  academicYear: string,
+): Promise<StaffLeaveOverviewRow[]> {
+  return Promise.all(
+    staffs.map(async (staff) => {
+      const staffId = staff.uid || staff.id;
+      const [balances, spl] = await Promise.all([
+        staffLeaveService.getStaffPortalBalanceSummary(staffId, academicYear),
+        staffLeaveService.getSpecialLeaveBalance(staffId, academicYear),
+      ]);
+
+      const totalUsed = balances.reduce((s, b) => s + b.usedDays, 0);
+      const totalPending = balances.reduce((s, b) => s + b.pendingDays, 0);
+      const splGranted = spl?.usedDays ?? 0;
+
+      return {
+        staffId,
+        staffName: staff.name,
+        balances,
+        splGranted,
+        totalUsed: totalUsed + splGranted,
+        totalPending,
+      };
+    }),
   );
 }
 
@@ -78,6 +129,8 @@ export function AdminStaffLeaveOverview() {
   const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
   const [rows, setRows] = useState<StaffLeaveOverviewRow[]>([]);
   const [loadingBalances, setLoadingBalances] = useState(true);
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
+  const [repairingStaffId, setRepairingStaffId] = useState<string | null>(null);
 
   const { data: staffData, loading: staffLoading } = useFirebaseRealtime<User>(
     "users",
@@ -156,32 +209,7 @@ export function AdminStaffLeaveOverview() {
     void (async () => {
       setLoadingBalances(true);
       try {
-        const results = await Promise.all(
-          staffs.map(async (staff) => {
-            const staffId = staff.uid || staff.id;
-            const [balances, spl] = await Promise.all([
-              staffLeaveService.getStaffPortalBalanceSummary(
-                staffId,
-                academicYear,
-              ),
-              staffLeaveService.getSpecialLeaveBalance(staffId, academicYear),
-            ]);
-
-            const totalUsed = balances.reduce((s, b) => s + b.usedDays, 0);
-            const totalPending = balances.reduce((s, b) => s + b.pendingDays, 0);
-            const splGranted = spl?.usedDays ?? 0;
-
-            return {
-              staffId,
-              staffName: staff.name,
-              balances,
-              splGranted,
-              totalUsed: totalUsed + splGranted,
-              totalPending,
-            };
-          }),
-        );
-
+        const results = await loadStaffLeaveRows(staffs, academicYear);
         if (!cancelled) {
           setRows(results);
         }
@@ -196,7 +224,36 @@ export function AdminStaffLeaveOverview() {
     return () => {
       cancelled = true;
     };
-  }, [staffs, academicYear, staffLoading]);
+  }, [staffs, academicYear, staffLoading, balanceRefreshKey]);
+
+  const handleRepairAccruals = async (staffId: string, staffName: string) => {
+    setRepairingStaffId(staffId);
+    try {
+      const { deleted, updated } =
+        await staffLeaveAccrualService.repairAccrualsForStaff(
+          staffId,
+          academicYear,
+          "admin",
+        );
+      if (deleted === 0 && updated === 0) {
+        toast.message(`No duplicate accruals found for ${staffName}`);
+      } else {
+        toast.success(
+          `Repaired ${staffName}: removed ${deleted} duplicate(s), fixed ${updated} record(s).`,
+        );
+      }
+      setBalanceRefreshKey((k) => k + 1);
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : `Failed to repair accruals for ${staffName}`,
+      );
+    } finally {
+      setRepairingStaffId(null);
+    }
+  };
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -313,6 +370,7 @@ export function AdminStaffLeaveOverview() {
                     const cl = getBalanceByCode(row.balances, "CL");
                     const sl = getBalanceByCode(row.balances, "SL");
                     const el = getBalanceByCode(row.balances, "EL");
+                    const accrualMismatch = needsAccrualRepair(row.balances);
 
                     return (
                       <Fragment key={row.staffId}>
@@ -330,7 +388,15 @@ export function AdminStaffLeaveOverview() {
                             )}
                           </TableCell>
                           <TableCell className="font-medium">
-                            {row.staffName}
+                            <span className="inline-flex items-center gap-1.5">
+                              {row.staffName}
+                              {accrualMismatch ? (
+                                <AlertTriangle
+                                  className="h-3.5 w-3.5 shrink-0 text-amber-600"
+                                  aria-label="Accrual data needs repair"
+                                />
+                              ) : null}
+                            </span>
                           </TableCell>
                           <TableCell>{formatBalanceCell(cl)}</TableCell>
                           <TableCell>{formatBalanceCell(sl)}</TableCell>
@@ -356,10 +422,42 @@ export function AdminStaffLeaveOverview() {
                         {expanded ? (
                           <TableRow key={`${row.staffId}-history`}>
                             <TableCell colSpan={8} className="bg-muted/30 p-0">
-                              <div className="space-y-2 p-4">
-                                <p className="text-sm font-semibold">
-                                  Leave history — {row.staffName}
-                                </p>
+                              <div className="space-y-3 p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-sm font-semibold">
+                                    Leave history — {row.staffName}
+                                  </p>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={repairingStaffId === row.staffId}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handleRepairAccruals(
+                                        row.staffId,
+                                        row.staffName,
+                                      );
+                                    }}
+                                  >
+                                    {repairingStaffId === row.staffId ? (
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Wrench className="mr-1 h-3 w-3" />
+                                    )}
+                                    Repair accruals
+                                  </Button>
+                                </div>
+                                {accrualMismatch ? (
+                                  <Alert className="border-amber-300 bg-amber-50">
+                                    <AlertDescription className="text-sm text-amber-950">
+                                      Accrued days do not match quarter credits
+                                      (e.g. 3 accrued but only 2 quarters). Use{" "}
+                                      <strong>Repair accruals</strong> to remove
+                                      duplicate rows for this staff member only.
+                                    </AlertDescription>
+                                  </Alert>
+                                ) : null}
                                 {history.length === 0 ? (
                                   <p className="text-sm text-muted-foreground">
                                     No leave recorded this session.

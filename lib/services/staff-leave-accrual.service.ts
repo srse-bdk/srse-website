@@ -212,6 +212,92 @@ class StaffLeaveAccrualService {
     const quarters = new Set(matching.map((row) => row.quarterKey)).size;
     return { total, quarters };
   }
+
+  /**
+   * Remove duplicate quarter credits for one staff member and normalize days to policy.
+   * Keeps one row per quarter + leave type code (prefers current leave type id).
+   */
+  async repairAccrualsForStaff(
+    staffId: string,
+    academicYear?: string,
+    actionBy = "admin",
+  ): Promise<{ deleted: number; updated: number }> {
+    const year = academicYear || getAcademicYear();
+    await leaveTypeService.ensureAccrualTypesPresent(actionBy);
+
+    const leaveTypes = await leaveTypeService.getActive();
+    const codeToType = new Map(
+      leaveTypes
+        .filter((type) =>
+          ACCRUAL_LEAVE_CODES.includes(type.code as AccrualLeaveCode),
+        )
+        .map((type) => [type.code.trim().toUpperCase(), type]),
+    );
+
+    const accruals = await this.getByStaffAndYear(staffId, year);
+    const groups = new Map<string, StaffLeaveAccrual[]>();
+
+    for (const row of accruals) {
+      const key = `${row.quarterKey}:${row.leaveTypeCode.trim().toUpperCase()}`;
+      const list = groups.get(key) ?? [];
+      list.push(row);
+      groups.set(key, list);
+    }
+
+    let deleted = 0;
+    let updated = 0;
+    const nowISO = new Date().toISOString();
+
+    for (const rows of groups.values()) {
+      const code = rows[0]?.leaveTypeCode.trim().toUpperCase() ?? "";
+      const leaveType = codeToType.get(code);
+      const expectedDays = ACCRUAL_LEAVE_CODES.includes(code as AccrualLeaveCode)
+        ? QUARTERLY_LEAVE_ACCRUAL[code as AccrualLeaveCode]
+        : null;
+
+      const sorted = [...rows].sort((a, b) => {
+        const aMatch = leaveType && a.leaveTypeId === leaveType.id ? 1 : 0;
+        const bMatch = leaveType && b.leaveTypeId === leaveType.id ? 1 : 0;
+        if (bMatch !== aMatch) return bMatch - aMatch;
+        const aTime = String(a.updatedAt || a.createdAt || "");
+        const bTime = String(b.updatedAt || b.createdAt || "");
+        return bTime.localeCompare(aTime);
+      });
+
+      const keeper = sorted[0];
+      if (!keeper?.id) continue;
+
+      for (const duplicate of sorted.slice(1)) {
+        if (!duplicate.id) continue;
+        await mutate({
+          action: "delete",
+          path: `staffLeaveAccruals/${duplicate.id}`,
+          actionBy,
+        });
+        deleted += 1;
+      }
+
+      const patch: Record<string, unknown> = {};
+      if (leaveType && keeper.leaveTypeId !== leaveType.id) {
+        patch.leaveTypeId = leaveType.id;
+      }
+      if (expectedDays !== null && keeper.days !== expectedDays) {
+        patch.days = expectedDays;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await mutate({
+          action: "update",
+          path: `staffLeaveAccruals/${keeper.id}`,
+          data: { ...patch, updatedAt: nowISO },
+          actionBy,
+        });
+        updated += 1;
+      }
+    }
+
+    return { deleted, updated };
+  }
 }
 
 export const staffLeaveAccrualService = new StaffLeaveAccrualService();
