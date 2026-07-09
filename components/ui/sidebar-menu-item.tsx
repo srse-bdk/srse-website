@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useSidebar } from "@/components/ui/sidebar";
 import { SidebarActiveIndicator } from "./sidebar-active-indicator";
 
 interface SidebarMenuItemProps {
@@ -11,7 +12,7 @@ interface SidebarMenuItemProps {
   isActive?: boolean;
   badge?: string | number;
   className?: string;
-  onClick?: () => void;
+  onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
 }
 
 export function SidebarMenuItem({
@@ -23,11 +24,16 @@ export function SidebarMenuItem({
   className,
   onClick,
 }: SidebarMenuItemProps) {
+  const { isMobile, setOpenMobile } = useSidebar();
+
   return (
     <div className={cn("relative", className)}>
       <Link
         href={href}
-        onClick={onClick}
+        onClick={(event) => {
+          onClick?.(event);
+          if (isMobile) setOpenMobile(false);
+        }}
         className={cn(
           "menu-item-group relative flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-200",
           "hover:bg-sidebar-accent/40 hover:shadow-sm",

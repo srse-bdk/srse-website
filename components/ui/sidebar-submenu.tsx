@@ -9,6 +9,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { useSidebar } from "@/components/ui/sidebar";
 import { SidebarActiveIndicator } from "./sidebar-active-indicator";
 
 export type SubMenuItem = {
@@ -65,6 +66,8 @@ export function SidebarSubmenu({
   currentSearchParams,
   hasActiveSubItem,
 }: SidebarSubmenuProps) {
+  const { isMobile, setOpenMobile } = useSidebar();
+
   // Sort by URL length (longest first) to find most specific match
   const sortedSubItems = [...items].sort((a, b) => b.url.length - a.url.length);
 
@@ -144,6 +147,9 @@ export function SidebarSubmenu({
                       <div key={subItem.title}>
                         <Link
                           href={subItem.url}
+                          onClick={() => {
+                            if (isMobile) setOpenMobile(false);
+                          }}
                           className={cn(
                             "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-all duration-200",
                             "hover:bg-sidebar-accent/50 hover:shadow-sm",
