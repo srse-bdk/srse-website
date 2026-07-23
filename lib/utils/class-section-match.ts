@@ -74,6 +74,15 @@ export function normalizeSectionToken(value?: string): string {
   return raw.split(/\s+/)[0];
 }
 
+function isPreNurseryClassName(value: string): boolean {
+  const upper = value.toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+  return (
+    /\bPRE\s*NURSERY\b/.test(upper) ||
+    upper.includes("PRENURSERY") ||
+    upper.startsWith("PRE NUR")
+  );
+}
+
 function normalizeImportClassName(raw: string): string {
   const value = raw.trim();
   if (!value) return "";
@@ -81,6 +90,8 @@ function normalizeImportClassName(raw: string): string {
   const primaryToken = value.includes("/") ? value.split("/")[0].trim() : value;
   const upper = primaryToken.toUpperCase();
 
+  // Pre-Nursery must be checked before Nursery — both contain "NURSERY".
+  if (isPreNurseryClassName(primaryToken)) return "Pre Nursery";
   if (upper.includes("NURSERY")) return "Nursery";
   if (upper === "LKG") return "LKG";
   if (upper === "UKG") return "UKG";

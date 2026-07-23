@@ -20,6 +20,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -33,11 +40,16 @@ import {
   formatGenderLabel,
   getStudentPrimaryContact,
 } from "@/lib/utils/student-display";
-import { sortStudentsByClassSectionRoll } from "@/lib/utils/student-roll-number";
 import {
+  sortStudentsByClassSection,
+  type StudentListSortMode,
+} from "@/lib/utils/student-roll-number";
+import {
+  ArrowDownAZ,
   CheckCircle,
   Edit,
   GraduationCap,
+  Hash,
   MoreHorizontal,
   Phone,
   Plus,
@@ -92,6 +104,7 @@ export function StudentsTable({ students }: StudentsTableProps) {
   const params = useParams();
   const role = params.role as string;
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortMode, setSortMode] = useState<StudentListSortMode>("roll");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -112,8 +125,8 @@ export function StudentsTable({ students }: StudentsTableProps) {
         student.phone?.includes(searchTerm),
     );
 
-    return sortStudentsByClassSectionRoll(filtered);
-  }, [students, searchTerm]);
+    return sortStudentsByClassSection(filtered, sortMode);
+  }, [students, searchTerm, sortMode]);
 
   const activeStudentsMissingRoll = useMemo(() => {
     return students.filter(
@@ -188,15 +201,42 @@ export function StudentsTable({ students }: StudentsTableProps) {
     <div className="space-y-4 sm:space-y-6">
       {/* Modern Toolbar with Glassmorphism */}
       <div className="rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm shadow-lg p-4 sm:p-6 transition-all duration-200">
-        {/* Search Bar */}
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
-          <Input
-            placeholder="Search by name, scan ID, roll, admission, email, or phone..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 pr-4 h-11 text-sm sm:text-base border-border/50 bg-background/50 focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/50 transition-all duration-200"
-          />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative w-full flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+            <Input
+              placeholder="Search by name, scan ID, roll, admission, email, or phone..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 h-11 text-sm sm:text-base border-border/50 bg-background/50 focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/50 transition-all duration-200"
+            />
+          </div>
+          <div className="flex items-center gap-2 sm:w-[220px] shrink-0">
+            <Select
+              value={sortMode}
+              onValueChange={(value) =>
+                setSortMode(value as StudentListSortMode)
+              }
+            >
+              <SelectTrigger className="h-11 w-full" aria-label="Sort within class">
+                <SelectValue placeholder="Sort within class" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="roll">
+                  <span className="inline-flex items-center gap-2">
+                    <Hash className="h-3.5 w-3.5" />
+                    Roll no. in class
+                  </span>
+                </SelectItem>
+                <SelectItem value="name">
+                  <span className="inline-flex items-center gap-2">
+                    <ArrowDownAZ className="h-3.5 w-3.5" />
+                    Name A–Z in class
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <AnimatePresence>
           {selectedIds.length > 0 && (

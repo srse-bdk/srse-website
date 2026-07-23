@@ -542,6 +542,15 @@ function normalizeStatus(rawStatus: string): StudentStatus {
   return "active";
 }
 
+function isPreNurseryClassName(value: string): boolean {
+  const upper = value.toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+  return (
+    /\bPRE\s*NURSERY\b/.test(upper) ||
+    upper.includes("PRENURSERY") ||
+    upper.startsWith("PRE NUR")
+  );
+}
+
 function normalizeClassName(rawClass: string): string | undefined {
   if (!rawClass) return undefined;
   const value = rawClass.trim();
@@ -551,7 +560,9 @@ function normalizeClassName(rawClass: string): string | undefined {
   const primaryToken = value.includes("/") ? value.split("/")[0].trim() : value;
   const upper = primaryToken.toUpperCase();
 
-  if (upper === "NURSERY") return "Nursery";
+  // Pre-Nursery must be checked before Nursery — both contain "NURSERY".
+  if (isPreNurseryClassName(primaryToken)) return "Pre Nursery";
+  if (upper === "NURSERY" || upper.includes("NURSERY")) return "Nursery";
   if (upper === "LKG") return "LKG";
   if (upper === "UKG") return "UKG";
   if (/^[IVXLCDM]+$/i.test(primaryToken)) return upper;

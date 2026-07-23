@@ -148,7 +148,7 @@ export interface StudentUpdateInput {
   siblingIds?: string[];
   optionalFeeIds?: string[];
   optionalFeeAmounts?: Record<string, number>;
-  pen?: string;
+  pen?: string | null;
   socialCategory?: string;
   socialCategoryCode?: number;
   fatherName?: string;

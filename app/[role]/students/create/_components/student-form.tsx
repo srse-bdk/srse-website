@@ -366,7 +366,14 @@ function buildStudentPayloadFromForm(
     ...(data.optionalFeeAmounts && {
       optionalFeeAmounts: data.optionalFeeAmounts,
     }),
-    ...(data.pen && { pen: data.pen }),
+    ...(options.isEdit
+      ? {
+          // Always send pen on edit so clearing the field removes it in Firebase.
+          pen: data.pen?.trim() ? data.pen.trim() : null,
+        }
+      : data.pen?.trim()
+        ? { pen: data.pen.trim() }
+        : {}),
     ...(data.socialCategory && { socialCategory: data.socialCategory }),
     documents,
   };

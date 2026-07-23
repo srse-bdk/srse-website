@@ -62,10 +62,9 @@ export function studentMatchesClassSection(
   );
 }
 
-export function compareStudentsByClassSectionRoll(
-  left: Student,
-  right: Student,
-): number {
+export type StudentListSortMode = "roll" | "name";
+
+function compareClassThenSection(left: Student, right: Student): number {
   const [leftClassRank, leftClassKey] = getClassSortRank(left.currentClass);
   const [rightClassRank, rightClassKey] = getClassSortRank(right.currentClass);
 
@@ -77,10 +76,17 @@ export function compareStudentsByClassSectionRoll(
     return leftClassKey.localeCompare(rightClassKey);
   }
 
-  const sectionDiff = normalizeSectionToken(left.currentSection).localeCompare(
+  return normalizeSectionToken(left.currentSection).localeCompare(
     normalizeSectionToken(right.currentSection),
   );
-  if (sectionDiff !== 0) return sectionDiff;
+}
+
+export function compareStudentsByClassSectionRoll(
+  left: Student,
+  right: Student,
+): number {
+  const classSectionDiff = compareClassThenSection(left, right);
+  if (classSectionDiff !== 0) return classSectionDiff;
 
   const rollDiff =
     parseRollNumberSortValue(left.rollNumber) -
@@ -92,8 +98,40 @@ export function compareStudentsByClassSectionRoll(
   });
 }
 
+/** Within each class-section, sort A–Z by name (then roll as tiebreaker). */
+export function compareStudentsByClassSectionName(
+  left: Student,
+  right: Student,
+): number {
+  const classSectionDiff = compareClassThenSection(left, right);
+  if (classSectionDiff !== 0) return classSectionDiff;
+
+  const nameDiff = (left.fullName || "").localeCompare(
+    right.fullName || "",
+    undefined,
+    { sensitivity: "base" },
+  );
+  if (nameDiff !== 0) return nameDiff;
+
+  return (
+    parseRollNumberSortValue(left.rollNumber) -
+    parseRollNumberSortValue(right.rollNumber)
+  );
+}
+
 export function sortStudentsByClassSectionRoll(students: Student[]): Student[] {
   return [...students].sort(compareStudentsByClassSectionRoll);
+}
+
+export function sortStudentsByClassSection(
+  students: Student[],
+  mode: StudentListSortMode = "roll",
+): Student[] {
+  return [...students].sort(
+    mode === "name"
+      ? compareStudentsByClassSectionName
+      : compareStudentsByClassSectionRoll,
+  );
 }
 
 export function groupActiveStudentsByClassSection(

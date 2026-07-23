@@ -23,16 +23,41 @@ function stripClassPrefix(className: string): string {
     .trim();
 }
 
+/** Detect Pre-Nursery before plain Nursery (both contain "NURSERY"). */
+function isPreNurseryClass(value: string): boolean {
+  const upper = value.toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+  return (
+    /\bPRE\s*NURSERY\b/.test(upper) ||
+    upper.includes("PRENURSERY") ||
+    upper === "PRE NUR" ||
+    upper.startsWith("PRE NUR")
+  );
+}
+
+/**
+ * Strip a trailing single-letter section accidentally stored in the class
+ * field (e.g. "PRE NURSERY-A" → "PRE NURSERY").
+ */
+function stripEmbeddedSectionFromClass(className: string): string {
+  const trimmed = className.trim();
+  const withoutTrailingLetter = trimmed.replace(/\s*-\s*[A-Za-z]\s*$/, "").trim();
+  return withoutTrailingLetter || trimmed;
+}
+
 export function abbreviateClassNameForDisplay(className?: string): string {
   const value = String(className || "").trim();
   if (!value) return "";
 
-  const upper = value.toUpperCase();
+  const cleaned = stripEmbeddedSectionFromClass(value);
+  const upper = cleaned.toUpperCase();
+
+  // Pre-Nursery must be checked before Nursery — both contain "NURSERY".
+  if (isPreNurseryClass(cleaned)) return "PRE NURSERY";
   if (upper.includes("NURSERY")) return "NURSERY";
   if (upper === "LKG") return "LKG";
   if (upper === "UKG") return "UKG";
 
-  const stripped = stripClassPrefix(value);
+  const stripped = stripClassPrefix(cleaned);
   if (!stripped) return upper;
 
   const strippedUpper = stripped.toUpperCase();
@@ -50,6 +75,15 @@ export function abbreviateClassNameForDisplay(className?: string): string {
 export function formatClassSectionDisplay(student: Student): string {
   const cls = abbreviateClassNameForDisplay(student.currentClass);
   const sec = String(student.currentSection || "").trim().toUpperCase();
+
+  // Section "PRE" is a class fragment for Pre-Nursery, not a section label.
+  if (
+    cls === "PRE NURSERY" &&
+    (sec === "PRE" || sec === "PRENURSERY" || sec.startsWith("PRE"))
+  ) {
+    return "PRE NURSERY";
+  }
+
   if (cls && sec) return `${cls}-${sec}`;
   if (cls) return cls;
   return "-";
