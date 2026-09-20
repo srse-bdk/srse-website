@@ -366,14 +366,6 @@ function buildStudentPayloadFromForm(
     ...(data.optionalFeeAmounts && {
       optionalFeeAmounts: data.optionalFeeAmounts,
     }),
-    ...(options.isEdit
-      ? {
-          // Always send pen on edit so clearing the field removes it in Firebase.
-          pen: data.pen?.trim() ? data.pen.trim() : null,
-        }
-      : data.pen?.trim()
-        ? { pen: data.pen.trim() }
-        : {}),
     ...(data.socialCategory && { socialCategory: data.socialCategory }),
     documents,
   };
@@ -381,6 +373,8 @@ function buildStudentPayloadFromForm(
   if (options.isEdit) {
     return {
       ...payload,
+      // Always send pen on edit so clearing the field removes it in Firebase.
+      pen: data.pen?.trim() ? data.pen.trim() : null,
       ...(data.admissionNumber && { admissionNumber: data.admissionNumber }),
     } satisfies StudentUpdateInput;
   }
@@ -388,6 +382,7 @@ function buildStudentPayloadFromForm(
   return {
     admissionNumber: data.admissionNumber || `ADM-${Date.now()}`,
     ...payload,
+    ...(data.pen?.trim() ? { pen: data.pen.trim() } : {}),
   } satisfies StudentInput;
 }
 
