@@ -361,9 +361,15 @@ class StudentService {
     }
 
     // If name fields are updated, recompute fullName
-    const { address, ...restData } = data;
+    const { address, pen, ...restData } = data;
 
-    const updateData: Partial<Student> = { ...restData };
+    // Allow null for Firebase field deletes (e.g. clearing PEN).
+    const updateData: Omit<Partial<Student>, "pen"> & {
+      pen?: string | null;
+    } = {
+      ...restData,
+      ...(pen !== undefined ? { pen } : {}),
+    };
 
     // Fetch current student if needed for name or address updates
     const needsCurrent = data.firstName || data.lastName || address;
