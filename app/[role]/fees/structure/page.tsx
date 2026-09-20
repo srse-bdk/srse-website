@@ -61,7 +61,7 @@ export default function FeeStructurePage() {
     if (loading || isSeedingDefault) return;
 
     const hasDefaultTution = configs.some((cfg) => {
-      const name = cfg.name.trim().toLowerCase();
+      const name = (cfg.name || "").trim().toLowerCase();
       return name === "tuition";
     });
     if (hasDefaultTution) return;
@@ -168,14 +168,6 @@ export default function FeeStructurePage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
   const issuedCountByConfig = React.useMemo(() => {
     const map = new Map<string, number>();
     for (const item of issued) {
@@ -184,6 +176,14 @@ export default function FeeStructurePage() {
     }
     return map;
   }, [issued]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
