@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAppStore } from "@/hooks/use-app-store";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import { cashBookService } from "@/lib/services/cash-book.service";
+import { feeService } from "@/lib/services/fee.service";
 import type {
   CashBookEntry,
   CashBookEntryType,
@@ -41,7 +42,11 @@ import {
 } from "@/lib/types/cash-book.type";
 import type { FeeConfiguration, FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
-import { resolveFeeAmountReference } from "@/lib/utils/cash-book-fee-reference";
+import {
+  matchingMandatoryConfigIds,
+  resolveFeeAmountReference,
+} from "@/lib/utils/cash-book-fee-reference";
+import { getAcademicYearForDate } from "@/lib/utils/fee-dues";
 import { formatCurrency } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
@@ -51,6 +56,14 @@ import { toast } from "sonner";
 import * as z from "zod";
 
 const NONE_STUDENT = "__none__";
+
+const RECURRING_INCOME_CODES = new Set([
+  "I-TUI",
+  "I-TRN",
+  "I-TIF",
+  "I-DAN",
+  "I-ABA",
+]);
 
 const entrySchema = z.object({
   type: z.enum(["income", "expense"]),
@@ -176,6 +189,33 @@ export function CashBookEntryFormDialog({
     feeRecords,
     cashEntries,
     entry?.id,
+    date,
+  ]);
+
+  // Ensure missing monthly bills exist before showing pending.
+  useEffect(() => {
+    if (!open || selectedType !== "income") return;
+    if (!selectedStudent || !selectedCategory) return;
+    if (!RECURRING_INCOME_CODES.has(selectedCategory)) return;
+
+    const asOf = new Date(`${date}T12:00:00`);
+    const academicYear = getAcademicYearForDate(asOf);
+    const configIds = matchingMandatoryConfigIds(
+      feeConfigs,
+      selectedCategory,
+      academicYear,
+    );
+    if (configIds.length === 0) return;
+
+    void feeService.catchUpConfigsThroughDate(configIds, asOf).catch((error) => {
+      console.error(error);
+    });
+  }, [
+    open,
+    selectedType,
+    selectedStudent,
+    selectedCategory,
+    feeConfigs,
     date,
   ]);
 
@@ -482,11 +522,10 @@ export function CashBookEntryFormDialog({
               selectedCategory &&
               feeReference && (
                 <p className="text-sm text-muted-foreground -mt-2">
-                  {feeReference.kind === "pending" ? "Pending" : "Structure"}:{" "}
                   <span className="font-medium text-foreground">
                     {formatCurrency(feeReference.amount)}
                   </span>
-                  {feeReference.feeName ? ` · ${feeReference.feeName}` : ""}
+                  {feeReference.label ? ` · ${feeReference.label}` : ""}
                 </p>
               )}
 

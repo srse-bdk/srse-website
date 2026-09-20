@@ -66,7 +66,7 @@ export const CASH_BOOK_INCOME_CATEGORIES: CashBookCategory[] = [
   { code: "I-UNI", label: "Uniform", type: "income" },
   {
     code: "I-OTH",
-    label: "Other one-time (Picnic, ID Card, Annual Function, etc.)",
+    label: "Other one-time",
     type: "income",
   },
   { code: "I-TUI", label: "Monthly Tuition Fee", type: "income" },

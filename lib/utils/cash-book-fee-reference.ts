@@ -26,12 +26,14 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   "I-TIF": ["tiffin"],
   "I-DAN": ["dance"],
   "I-ABA": ["abacus"],
-  "I-ADM": ["admission"],
+  // More specific than I-ADM — checked with exclude on admission-only
   "I-READ": ["readmission", "re-admission", "re admission"],
-  "I-BOOK": ["book"],
-  "I-COPY": ["cop"],
+  "I-ADM": ["admission"],
+  "I-BOOK": ["book", "books"],
+  "I-COPY": ["copy", "copies"],
   "I-UNI": ["uniform"],
-  "I-OTH": ["other", "picnic", "id card", "annual function"],
+  // Do NOT use bare "other" — it matches FeeCategory "other" and many titles
+  "I-OTH": ["picnic", "id card", "id-card", "idcard", "annual function"],
   "I-MSC": ["misc", "miscellaneous"],
 };
 
@@ -44,24 +46,137 @@ const PENDING_STYLE_CODES = new Set([
   "I-ABA",
 ]);
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Whole-phrase match so "other" / "cop" do not bleed across categories. */
 function matchesKeywords(text: string, keywords: string[]) {
   const n = normalize(text);
-  return keywords.some((k) => n.includes(k));
+  if (!n) return false;
+  return keywords.some((k) => {
+    const phrase = normalize(k);
+    if (!phrase) return false;
+    const pattern = new RegExp(
+      `(^|[^a-z0-9])${escapeRegExp(phrase)}([^a-z0-9]|$)`,
+      "i",
+    );
+    return pattern.test(n);
+  });
+}
+
+function textMatchesCategoryCode(text: string, categoryCode: string): boolean {
+  const keywords = CATEGORY_KEYWORDS[categoryCode];
+  if (!keywords?.length) return false;
+
+  // I-ADM must not match readmission titles
+  if (categoryCode === "I-ADM") {
+    const n = normalize(text);
+    if (
+      n.includes("readmission") ||
+      n.includes("re-admission") ||
+      n.includes("re admission")
+    ) {
+      return false;
+    }
+  }
+
+  // I-OTH: never match bare category/title "other" alone via substring;
+  // only picnic / id card / annual function style names.
+  if (categoryCode === "I-OTH") {
+    return matchesKeywords(text, keywords);
+  }
+
+  return matchesKeywords(text, keywords);
 }
 
 function configMatchesCategory(config: FeeConfiguration, categoryCode: string) {
-  const keywords = CATEGORY_KEYWORDS[categoryCode];
-  if (!keywords?.length) return false;
-  return matchesKeywords(config.name, keywords);
+  return textMatchesCategoryCode(config.name, categoryCode);
 }
 
 function recordMatchesCategory(fee: FeeRecord, categoryCode: string) {
-  const keywords = CATEGORY_KEYWORDS[categoryCode];
-  if (!keywords?.length) return false;
+  const category = String(fee.category || "");
+  const title = fee.title || "";
+
+  // Exact fee category enum "other" is NOT treated as I-OTH (too generic).
+  if (categoryCode === "I-OTH") {
+    return (
+      textMatchesCategoryCode(title, categoryCode) ||
+      textMatchesCategoryCode(category, categoryCode)
+    );
+  }
+
   return (
-    matchesKeywords(String(fee.category || ""), keywords) ||
-    matchesKeywords(fee.title || "", keywords)
+    textMatchesCategoryCode(category, categoryCode) ||
+    textMatchesCategoryCode(title, categoryCode)
   );
+}
+
+export function matchingMandatoryConfigIds(
+  feeConfigs: FeeConfiguration[],
+  categoryCode: string,
+  academicYear?: string,
+): string[] {
+  return feeConfigs
+    .filter(
+      (cfg) =>
+        !cfg.isOptional &&
+        configMatchesCategory(cfg, categoryCode) &&
+        (!academicYear ||
+          !cfg.academicYear ||
+          cfg.academicYear === academicYear),
+    )
+    .map((cfg) => cfg.id);
+}
+
+function formatPendingMonthRange(records: FeeRecord[]): string {
+  const keys = [
+    ...new Set(
+      records
+        .map((r) => r.issuePeriodKey)
+        .filter((k): k is string => Boolean(k)),
+    ),
+  ].sort();
+
+  if (keys.length === 0) return "";
+  if (keys.length === 1) {
+    const key = keys[0];
+    // YYYY-MM → Jun 2026 short
+    const m = key.match(/^(\d{4})-(\d{2})$/);
+    if (m) {
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+      return d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+    }
+    return key;
+  }
+
+  const parseMonth = (key: string) => {
+    const m = key.match(/^(\d{4})-(\d{2})$/);
+    if (!m) return null;
+    return new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  };
+
+  const first = parseMonth(keys[0]);
+  const last = parseMonth(keys[keys.length - 1]);
+  if (first && last) {
+    const a = first.toLocaleDateString("en-IN", { month: "short" });
+    const b = last.toLocaleDateString("en-IN", {
+      month: "short",
+      year: "numeric",
+    });
+    return `${a}–${b} · ${keys.length} months`;
+  }
+
+  return `${keys.length} periods`;
+}
+
+function buildPendingLabel(feeName: string, records: FeeRecord[]): string {
+  const range = formatPendingMonthRange(records);
+  if (range) return `Pending ${feeName} · ${range}`;
+  if (records.length > 1) {
+    return `Pending ${feeName} · ${records.length} months`;
+  }
+  return `Pending ${feeName}`;
 }
 
 function structureAmountForStudent(
@@ -164,16 +279,24 @@ export function resolveFeeAmountReference(params: {
   if (matchingRecords.length > 0 && issuedPending > 0) {
     const remaining = Math.max(0, issuedPending - cashAlready);
     if (remaining > 0) {
-      const names = [
-        ...new Set(matchingRecords.map((r) => r.title || r.category)),
-      ];
+      const feeName =
+        matchingConfigs[0]?.name ||
+        (() => {
+          const t = matchingRecords[0]?.title || "fee";
+          const stripped = t.replace(
+            /^(January|February|March|April|May|June|July|August|September|October|November|December|Q\d)\s+/i,
+            "",
+          );
+          return stripped.replace(/^\d{4}\s+/, "").trim() || t;
+        })();
+
       return {
         amount: remaining,
         kind: "pending",
-        label: `Pending ${names[0] || "fee"}`,
-        feeConfigId: matchingRecords[0]?.feeConfigId,
+        label: buildPendingLabel(feeName, matchingRecords),
+        feeConfigId: matchingRecords[0]?.feeConfigId || matchingConfigs[0]?.id,
         feeRecordIds: matchingRecords.map((r) => r.id).filter(Boolean),
-        feeName: names[0],
+        feeName,
       };
     }
   }

@@ -22,7 +22,7 @@ import {
 import { FeeConfigDialog } from "../_components/fee-config-dialog";
 import { SetClassFeesDialog } from "../_components/set-class-fees-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2, Loader2, Wallet, Send } from "lucide-react";
+import { Trash2, Loader2, Wallet, RefreshCw } from "lucide-react";
 import { feeService } from "@/lib/services/fee.service";
 import { toast } from "sonner";
 import {
@@ -36,23 +36,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { format } from "date-fns";
-
-function getPeriodKey(cycle: FeeConfiguration["cycle"], date: Date) {
-  const y = date.getFullYear();
-  const m = date.getMonth() + 1;
-  if (cycle === "monthly") return `${y}-${String(m).padStart(2, "0")}`;
-  if (cycle === "quarterly") return `${y}-q${Math.floor((m - 1) / 3) + 1}`;
-  if (cycle === "annually") return `${y}`;
-  return "one-time";
-}
-
-function getIssueLabel(cycle: FeeConfiguration["cycle"], date: Date) {
-  if (cycle === "monthly") return `Issue ${format(date, "MMMM yyyy")}`;
-  if (cycle === "quarterly") return `Issue Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
-  if (cycle === "annually") return `Issue ${date.getFullYear()}`;
-  return "Issue One-time";
-}
 
 export default function FeeStructurePage() {
   const { data: configsData, loading } = useFirebaseRealtime<FeeConfiguration>(
@@ -68,17 +51,19 @@ export default function FeeStructurePage() {
   const configs = (configsData as FeeConfiguration[]) || [];
   const issued = (issuedData as FeeRecord[]) || [];
   const [isSeedingDefault, setIsSeedingDefault] = React.useState(false);
-  const [issuingConfigId, setIssuingConfigId] = React.useState<string | null>(null);
+  const [issuingConfigId, setIssuingConfigId] = React.useState<string | null>(
+    null,
+  );
+  const [catchingUpAll, setCatchingUpAll] = React.useState(false);
+  const autoCatchUpDone = React.useRef(false);
 
   React.useEffect(() => {
     if (loading || isSeedingDefault) return;
 
-    const hasDefaultTution = configs.some(
-      (cfg) => {
-        const name = cfg.name.trim().toLowerCase();
-        return name === "tuition";
-      },
-    );
+    const hasDefaultTution = configs.some((cfg) => {
+      const name = cfg.name.trim().toLowerCase();
+      return name === "tuition";
+    });
     if (hasDefaultTution) return;
 
     const now = new Date();
@@ -108,6 +93,28 @@ export default function FeeStructurePage() {
       });
   }, [configs, loading, isSeedingDefault]);
 
+  // Auto catch-up missing months once when the page has configs.
+  React.useEffect(() => {
+    if (loading || autoCatchUpDone.current) return;
+    const mandatory = configs.filter((c) => !c.isOptional);
+    if (mandatory.length === 0) return;
+
+    autoCatchUpDone.current = true;
+    void feeService
+      .catchUpAllMandatoryFees(new Date())
+      .then((result) => {
+        if (result.created > 0) {
+          toast.success(
+            `Caught up ${result.created} missing fee bill${result.created === 1 ? "" : "s"}`,
+          );
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        autoCatchUpDone.current = false;
+      });
+  }, [configs, loading]);
+
   const handleDelete = async (id: string) => {
     try {
       await feeService.deleteFeeConfig(id);
@@ -118,20 +125,46 @@ export default function FeeStructurePage() {
     }
   };
 
-  const handleIssue = async (config: FeeConfiguration) => {
+  const handleCatchUp = async (config: FeeConfiguration) => {
     setIssuingConfigId(config.id);
     try {
-      const result = await feeService.issueFeesForConfig(config.id, new Date());
+      const result = await feeService.issueFeesForConfigThroughDate(
+        config.id,
+        new Date(),
+      );
       if (result.created > 0) {
-        toast.success(`Issued ${result.created} fee records for ${config.name}`);
+        toast.success(
+          `Caught up ${result.created} ${config.name} bill${result.created === 1 ? "" : "s"} through this month`,
+        );
       } else {
-        toast.info(`${config.name} is already issued for this period`);
+        toast.info(
+          `${config.name} is already up to date through this month`,
+        );
       }
     } catch (error) {
       console.error(error);
-      toast.error("Failed to issue fee records");
+      toast.error("Failed to catch up fee records");
     } finally {
       setIssuingConfigId(null);
+    }
+  };
+
+  const handleCatchUpAll = async () => {
+    setCatchingUpAll(true);
+    try {
+      const result = await feeService.catchUpAllMandatoryFees(new Date());
+      if (result.created > 0) {
+        toast.success(
+          `Caught up ${result.created} missing fee bill${result.created === 1 ? "" : "s"}`,
+        );
+      } else {
+        toast.info("All mandatory fees are already up to date");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to catch up fees");
+    } finally {
+      setCatchingUpAll(false);
     }
   };
 
@@ -143,17 +176,40 @@ export default function FeeStructurePage() {
     );
   }
 
+  const issuedCountByConfig = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of issued) {
+      if (!item.feeConfigId) continue;
+      map.set(item.feeConfigId, (map.get(item.feeConfigId) || 0) + 1);
+    }
+    return map;
+  }, [issued]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Fee Structure</h1>
           <p className="text-muted-foreground">
-            Manage fee types and class-wise fee structures.
+            Manage fee types and class-wise amounts. Bills auto-catch up from
+            admission through the current month.
           </p>
         </div>
-        {/* Button to add new fee with Name, Cycle, Is Optional */}
-        <FeeConfigDialog />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={handleCatchUpAll}
+            disabled={catchingUpAll || configs.every((c) => c.isOptional)}
+          >
+            {catchingUpAll ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            Catch up all fees
+          </Button>
+          <FeeConfigDialog />
+        </div>
       </div>
 
       <Card className="border-none shadow-md">
@@ -162,7 +218,10 @@ export default function FeeStructurePage() {
             <Wallet className="h-5 w-5 text-primary" />
             Fee List
           </CardTitle>
-          <CardDescription>List of all configured fees.</CardDescription>
+          <CardDescription>
+            Catch up creates any missing monthly/period bills through this
+            month.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -172,7 +231,8 @@ export default function FeeStructurePage() {
                 <TableHead>Fee Cycle</TableHead>
                 <TableHead>Is Optional</TableHead>
                 <TableHead>Set Fee</TableHead>
-                <TableHead>Issue</TableHead>
+                <TableHead>Issued bills</TableHead>
+                <TableHead>Catch up</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -180,26 +240,24 @@ export default function FeeStructurePage() {
               {configs.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="text-center py-8 text-muted-foreground"
                   >
-                    No fees defined. Default "Tuition Fee" will be auto-created.
+                    No fees defined. Default &quot;Tuition Fee&quot; will be
+                    auto-created.
                   </TableCell>
                 </TableRow>
               ) : (
                 configs.map((config) => {
-                  const periodKey = getPeriodKey(config.cycle, new Date());
-                  const alreadyIssued = issued.some(
-                    (item) =>
-                      item.feeConfigId === config.id &&
-                      item.issuePeriodKey === periodKey,
-                  );
-                  const disableIssue = config.isOptional || alreadyIssued;
-
+                  const billCount = issuedCountByConfig.get(config.id) || 0;
                   return (
                     <TableRow key={config.id}>
-                      <TableCell className="font-medium">{config.name}</TableCell>
-                      <TableCell className="capitalize">{config.cycle}</TableCell>
+                      <TableCell className="font-medium">
+                        {config.name}
+                      </TableCell>
+                      <TableCell className="capitalize">
+                        {config.cycle}
+                      </TableCell>
                       <TableCell>
                         <Checkbox
                           checked={config.isOptional}
@@ -216,20 +274,29 @@ export default function FeeStructurePage() {
                           <SetClassFeesDialog config={config} />
                         )}
                       </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {config.isOptional ? "—" : billCount}
+                      </TableCell>
                       <TableCell>
-                        <Button
-                          size="sm"
-                          variant={alreadyIssued ? "outline" : "default"}
-                          disabled={disableIssue || issuingConfigId === config.id}
-                          onClick={() => handleIssue(config)}
-                        >
-                          {issuingConfigId === config.id ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Send className="mr-2 h-4 w-4" />
-                          )}
-                          {alreadyIssued ? "Already Issued" : getIssueLabel(config.cycle, new Date())}
-                        </Button>
+                        {config.isOptional ? (
+                          <span className="text-muted-foreground text-sm">
+                            —
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={issuingConfigId === config.id}
+                            onClick={() => handleCatchUp(config)}
+                          >
+                            {issuingConfigId === config.id ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                            )}
+                            Through this month
+                          </Button>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
@@ -249,8 +316,8 @@ export default function FeeStructurePage() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Delete Fee?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will delete <strong>{config.name}</strong>{" "}
-                                  permanently.
+                                  This will delete{" "}
+                                  <strong>{config.name}</strong> permanently.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

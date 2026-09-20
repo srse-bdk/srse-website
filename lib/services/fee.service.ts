@@ -1,8 +1,14 @@
 import { FeeCategory, FeeConfiguration, FeeRecord, FeeStatus } from "@/lib/types/fee.type";
 import type { FeePayment } from "@/lib/types/fee-payment.type";
+import type { Student } from "@/lib/types/student.type";
+import {
+  getAcademicYearForDate,
+  getAcademicYearRange,
+  getStudentFeeAnchorDate,
+} from "@/lib/utils/fee-dues";
 import { getArrFromObj } from "@ashirbad/js-core";
 import { mutate } from "@atechhub/firebase";
-import { endOfMonth, format } from "date-fns";
+import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
 import { financialService } from "./financial.service";
 
 interface RecordFeePaymentInput {
@@ -64,6 +70,96 @@ function getIssuePeriodKey(cycle: FeeConfiguration["cycle"], date: Date) {
   if (cycle === "quarterly") return `${y}-q${Math.floor((m - 1) / 3) + 1}`;
   if (cycle === "annually") return `${y}`;
   return "one-time";
+}
+
+function getCycleStepMonths(cycle: FeeConfiguration["cycle"]) {
+  if (cycle === "monthly") return 1;
+  if (cycle === "quarterly") return 3;
+  if (cycle === "annually") return 12;
+  return 0;
+}
+
+/** Period dates from academic-year start through `throughDate` for a fee cycle. */
+function listIssuePeriodDates(
+  cycle: FeeConfiguration["cycle"],
+  throughDate: Date,
+): Date[] {
+  const academicYear = getAcademicYearForDate(throughDate);
+  const { start: ayStart } = getAcademicYearRange(academicYear);
+  const end = startOfMonth(throughDate);
+
+  if (cycle === "one-time") {
+    return [ayStart];
+  }
+
+  const step = getCycleStepMonths(cycle);
+  if (!step) return [];
+
+  const periods: Date[] = [];
+  let cursor = startOfMonth(ayStart);
+  while (cursor <= end) {
+    periods.push(new Date(cursor));
+    cursor = addMonths(cursor, step);
+  }
+  return periods;
+}
+
+function buildFeeIssueRecord(params: {
+  config: FeeConfiguration;
+  student: Student | Record<string, any>;
+  issueDate: Date;
+  nowISO: string;
+}): { id: string; data: Omit<FeeRecord, "id"> } | null {
+  const { config, student, issueDate, nowISO } = params;
+  const classId = student.currentClass || "unassigned";
+  const amount = Number(config.classFees?.[classId] || 0);
+  if (amount <= 0) return null;
+
+  const periodKey = getIssuePeriodKey(config.cycle, issueDate);
+  const recordId = `${slug(config.id)}_${slug(student.id)}_${slug(periodKey)}`;
+  const dueDate = format(endOfMonth(issueDate), "yyyy-MM-dd");
+  const title =
+    config.cycle === "one-time"
+      ? config.name
+      : config.cycle === "annually"
+        ? `${format(issueDate, "yyyy")} ${config.name}`
+        : config.cycle === "quarterly"
+          ? `Q${Math.floor(issueDate.getMonth() / 3) + 1} ${format(issueDate, "yyyy")} ${config.name}`
+          : `${format(issueDate, "MMMM")} ${config.name}`;
+
+  return {
+    id: recordId,
+    data: {
+      studentId: student.id,
+      studentName: student.fullName || "",
+      classId,
+      feeConfigId: config.id,
+      issuePeriodKey: periodKey,
+      title,
+      category: config.name.toLowerCase() as FeeCategory,
+      amount,
+      paidAmount: 0,
+      discountAmount: 0,
+      fineAmount: 0,
+      dueDate,
+      status: "pending",
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+  };
+}
+
+function studentEligibleForPeriod(
+  student: Student | Record<string, any>,
+  issueDate: Date,
+  cycle: FeeConfiguration["cycle"],
+): boolean {
+  if (student.status && student.status !== "active") return false;
+  const anchor = getStudentFeeAnchorDate(student as Student);
+  if (cycle === "one-time") {
+    return startOfMonth(anchor) <= startOfMonth(issueDate);
+  }
+  return startOfMonth(anchor) <= startOfMonth(issueDate);
 }
 
 export const feeService = {
@@ -336,6 +432,28 @@ export const feeService = {
   },
 
   async issueFeesForConfig(configId: string, issueDate = new Date()) {
+    return this.issueFeesForConfigPeriods(configId, [issueDate]);
+  },
+
+  /**
+   * Issue missing fee records for every period from academic-year start
+   * through `throughDate`, for students whose admission/anchor is on or
+   * before each period.
+   */
+  async issueFeesForConfigThroughDate(
+    configId: string,
+    throughDate = new Date(),
+  ) {
+    const configs = await this.getAllConfigs();
+    const config = configs.find((c) => c.id === configId);
+    if (!config) throw new Error("Fee config not found");
+    if (config.isOptional) throw new Error("Optional fees are set per student");
+
+    const periods = listIssuePeriodDates(config.cycle, throughDate);
+    return this.issueFeesForConfigPeriods(configId, periods);
+  },
+
+  async issueFeesForConfigPeriods(configId: string, periodDates: Date[]) {
     const [configs, studentsData, issuedRaw] = await Promise.all([
       this.getAllConfigs(),
       mutate({ action: "get", path: "students" }),
@@ -346,43 +464,31 @@ export const feeService = {
     if (config.isOptional) throw new Error("Optional fees are set per student");
 
     const students = getArrFromObj(studentsData || {}) as any[];
-    const issued = (getArrFromObj(issuedRaw || {}) as unknown) as FeeRecord[];
-    const periodKey = getIssuePeriodKey(config.cycle, issueDate);
-    const dueDate = format(endOfMonth(issueDate), "yyyy-MM-dd");
+    const issuedIds = new Set(
+      ((getArrFromObj(issuedRaw || {}) as unknown) as FeeRecord[]).map(
+        (f) => f.id,
+      ),
+    );
     const nowISO = new Date().toISOString();
-
-    const activeStudents = students.filter((s) => s.status === "active");
     const toIssue: Array<{ id: string; data: Omit<FeeRecord, "id"> }> = [];
+    const seen = new Set<string>();
 
-    for (const student of activeStudents) {
-      const classId = student.currentClass || "unassigned";
-      const amount = Number(config.classFees?.[classId] || 0);
-      if (amount <= 0) continue;
-
-      const recordId = `${slug(config.id)}_${slug(student.id)}_${slug(periodKey)}`;
-      const alreadyIssued = issued.some((f) => f.id === recordId);
-      if (alreadyIssued) continue;
-
-      toIssue.push({
-        id: recordId,
-        data: {
-          studentId: student.id,
-          studentName: student.fullName,
-          classId,
-          feeConfigId: config.id,
-          issuePeriodKey: periodKey,
-          title: `${format(issueDate, "MMMM")} ${config.name}`,
-          category: config.name.toLowerCase() as FeeCategory,
-          amount,
-          paidAmount: 0,
-          discountAmount: 0,
-          fineAmount: 0,
-          dueDate,
-          status: "pending",
-          createdAt: nowISO,
-          updatedAt: nowISO,
-        },
-      });
+    for (const issueDate of periodDates) {
+      for (const student of students) {
+        if (!studentEligibleForPeriod(student, issueDate, config.cycle)) {
+          continue;
+        }
+        const built = buildFeeIssueRecord({
+          config,
+          student,
+          issueDate,
+          nowISO,
+        });
+        if (!built) continue;
+        if (issuedIds.has(built.id) || seen.has(built.id)) continue;
+        seen.add(built.id);
+        toIssue.push(built);
+      }
     }
 
     await Promise.all(
@@ -396,7 +502,53 @@ export const feeService = {
       ),
     );
 
-    return { created: toIssue.length, periodKey };
+    return {
+      created: toIssue.length,
+      skipped: seen.size - toIssue.length,
+      periods: periodDates.length,
+    };
+  },
+
+  /** Catch up all mandatory fees for the current academic year through today. */
+  async catchUpAllMandatoryFees(throughDate = new Date()) {
+    const academicYear = getAcademicYearForDate(throughDate);
+    const configs = await this.getAllConfigs();
+    const mandatory = configs.filter(
+      (cfg) =>
+        !cfg.isOptional &&
+        (!cfg.academicYear || cfg.academicYear === academicYear),
+    );
+
+    let created = 0;
+    for (const cfg of mandatory) {
+      const result = await this.issueFeesForConfigThroughDate(
+        cfg.id,
+        throughDate,
+      );
+      created += result.created;
+    }
+    return { created, configs: mandatory.length };
+  },
+
+  /**
+   * Catch up matching mandatory configs (by id list) through today.
+   * Used before cash-book fee reference so missing months exist.
+   */
+  async catchUpConfigsThroughDate(
+    configIds: string[],
+    throughDate = new Date(),
+  ) {
+    let created = 0;
+    const unique = [...new Set(configIds.filter(Boolean))];
+    for (const id of unique) {
+      try {
+        const result = await this.issueFeesForConfigThroughDate(id, throughDate);
+        created += result.created;
+      } catch (error) {
+        console.error(`Catch-up failed for config ${id}`, error);
+      }
+    }
+    return { created };
   },
 
   async getIssuedStatusForConfig(configId: string, issueDate = new Date()) {
@@ -417,7 +569,7 @@ export const feeService = {
   },
 
   async syncFeesForMonth(month: Date, academicYear: string) {
-    // Kept for compatibility; new flow issues fees from fee structure action.
+    // Kept for compatibility; prefer catchUpAllMandatoryFees.
     const configs = await this.getAllConfigs();
     const mandatory = configs.filter(
       (cfg) => !cfg.isOptional && cfg.academicYear === academicYear,
