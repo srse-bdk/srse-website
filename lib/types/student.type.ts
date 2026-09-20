@@ -115,7 +115,8 @@ export interface StudentInput {
   siblingIds?: string[];
   optionalFeeIds?: string[];
   optionalFeeAmounts?: Record<string, number>;
-  pen?: string;
+  /** Null clears an existing PEN on write paths that reuse this shape. */
+  pen?: string | null;
   socialCategory?: string;
   socialCategoryCode?: number;
   fatherName?: string;
