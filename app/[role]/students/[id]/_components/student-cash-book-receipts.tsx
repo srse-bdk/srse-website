@@ -152,11 +152,26 @@ export function StudentCashBookReceipts({
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{category}</div>
-                        {(entry.refNo || note) && (
-                          <div className="text-xs text-muted-foreground">
+                        {(entry.refNo ||
+                          note ||
+                          (entry.feeReferenceLabel &&
+                            Number(entry.feeReferenceAmount) > 0)) && (
+                          <div className="text-xs text-muted-foreground space-y-0.5">
                             {[entry.refNo ? `Ref: ${entry.refNo}` : null, note]
                               .filter(Boolean)
                               .join(" · ")}
+                            {entry.feeReferenceLabel &&
+                            Number(entry.feeReferenceAmount) > 0 ? (
+                              <div>
+                                Expected:{" "}
+                                {formatCurrency(
+                                  Number(entry.feeReferenceAmount),
+                                )}
+                                {entry.feeReferenceKind === "pending"
+                                  ? " pending"
+                                  : ""}
+                              </div>
+                            ) : null}
                           </div>
                         )}
                       </TableCell>

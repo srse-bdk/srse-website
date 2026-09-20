@@ -380,6 +380,10 @@ export default function IncomeExpensesStatementPage() {
                         <div className="text-xs text-muted-foreground">
                           {getCashBookCategoryLabel(entry.categoryCode)}
                           {entry.refNo ? ` · Ref: ${entry.refNo}` : ""}
+                          {entry.feeReferenceLabel &&
+                          Number(entry.feeReferenceAmount) > 0
+                            ? ` · Fee ref ${formatCurrency(Number(entry.feeReferenceAmount))}`
+                            : ""}
                         </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs">

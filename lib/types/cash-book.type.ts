@@ -28,6 +28,12 @@ export interface CashBookEntry extends BaseEntity {
   studentId?: string;
   studentName?: string;
   studentAdmissionNumber?: string;
+  /** Readonly fee-structure / pending reference captured at entry time */
+  feeReferenceAmount?: number;
+  feeReferenceKind?: "pending" | "structure" | "issued";
+  feeReferenceLabel?: string;
+  feeConfigId?: string;
+  feeRecordIds?: string[];
   createdByUid?: string;
   createdByName?: string;
 }

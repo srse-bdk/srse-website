@@ -580,6 +580,18 @@ function EntryTable({
                         {getCashBookCategoryLabel(entry.categoryCode)}
                         {particularsNote ? ` · ${particularsNote}` : null}
                       </div>
+                      {entry.feeReferenceLabel &&
+                      Number(entry.feeReferenceAmount) > 0 ? (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Fee ref: {entry.feeReferenceLabel} ·{" "}
+                          {formatCurrency(Number(entry.feeReferenceAmount))}
+                          {entry.feeReferenceKind === "pending"
+                            ? " (pending)"
+                            : entry.feeReferenceKind === "structure"
+                              ? " (structure)"
+                              : ""}
+                        </div>
+                      ) : null}
                       {entry.studentId ? (
                         <Link
                           href={`/${role}/students/${entry.studentId}`}

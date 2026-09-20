@@ -39,10 +39,13 @@ import {
   CASH_BOOK_MODE_LABELS,
   categoriesForType,
 } from "@/lib/types/cash-book.type";
+import type { FeeConfiguration, FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
+import { resolveFeeAmountReference } from "@/lib/utils/cash-book-fee-reference";
+import { formatCurrency } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import * as z from "zod";
@@ -82,12 +85,30 @@ export function CashBookEntryFormDialog({
   const user = useAppStore((state) => state.user);
   const [submitting, setSubmitting] = useState(false);
   const isEdit = Boolean(entry?.id);
+  /** When true, changing student/category will overwrite amount from fee reference. */
+  const amountFollowsReference = useRef(true);
 
   const { data: studentsData } = useFirebaseRealtime<Student>("students", {
     asArray: true,
     enabled: open,
   });
+  const { data: feeConfigsData } = useFirebaseRealtime<FeeConfiguration>(
+    "feeConfigurations",
+    { asArray: true, enabled: open },
+  );
+  const { data: feeRecordsData } = useFirebaseRealtime<FeeRecord>("feeIssued", {
+    asArray: true,
+    enabled: open,
+  });
+  const { data: cashEntriesData } = useFirebaseRealtime<CashBookEntry>(
+    "cashBookEntries",
+    { asArray: true, enabled: open },
+  );
+
   const students = (studentsData as Student[]) || [];
+  const feeConfigs = (feeConfigsData as FeeConfiguration[]) || [];
+  const feeRecords = (feeRecordsData as FeeRecord[]) || [];
+  const cashEntries = (cashEntriesData as CashBookEntry[]) || [];
 
   const studentOptions = useMemo(() => {
     const active = students
@@ -95,7 +116,9 @@ export function CashBookEntryFormDialog({
       .map((s) => ({
         value: s.id,
         label: `${s.fullName || `${s.firstName} ${s.lastName}`.trim()} (${s.admissionNumber})`,
-        subLabel: [s.currentClass, s.currentSection].filter(Boolean).join(" · "),
+        subLabel: [s.currentClass, s.currentSection]
+          .filter(Boolean)
+          .join(" · "),
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
 
@@ -120,13 +143,45 @@ export function CashBookEntryFormDialog({
   });
 
   const selectedType = form.watch("type");
+  const selectedStudentId = form.watch("studentId");
+  const selectedCategory = form.watch("categoryCode");
   const categoryOptions = useMemo(
     () => categoriesForType(selectedType),
     [selectedType],
   );
 
+  const selectedStudent = useMemo(() => {
+    if (!selectedStudentId || selectedStudentId === NONE_STUDENT) return null;
+    return students.find((s) => s.id === selectedStudentId) || null;
+  }, [students, selectedStudentId]);
+
+  const feeReference = useMemo(() => {
+    if (selectedType !== "income" || !selectedStudent || !selectedCategory) {
+      return null;
+    }
+    return resolveFeeAmountReference({
+      student: selectedStudent,
+      categoryCode: selectedCategory,
+      feeConfigs,
+      feeRecords,
+      cashBookEntries: cashEntries,
+      excludeEntryId: entry?.id,
+      asOfDate: date,
+    });
+  }, [
+    selectedType,
+    selectedStudent,
+    selectedCategory,
+    feeConfigs,
+    feeRecords,
+    cashEntries,
+    entry?.id,
+    date,
+  ]);
+
   useEffect(() => {
     if (!open) return;
+    amountFollowsReference.current = !entry?.id;
     form.reset({
       type: entry?.type ?? defaultType,
       particulars: entry?.particulars ?? "",
@@ -139,6 +194,12 @@ export function CashBookEntryFormDialog({
     });
   }, [open, entry, defaultType, form]);
 
+  useEffect(() => {
+    if (!open || selectedType !== "income") return;
+    if (!feeReference || !amountFollowsReference.current) return;
+    form.setValue("amount", feeReference.amount, { shouldDirty: true });
+  }, [feeReference, open, selectedType, form]);
+
   const handleTypeChange = (type: CashBookEntryType) => {
     form.setValue("type", type, { shouldDirty: true });
     const codes = categoriesForType(type).map((c) => c.code);
@@ -148,10 +209,12 @@ export function CashBookEntryFormDialog({
     if (type === "expense") {
       form.setValue("studentId", NONE_STUDENT, { shouldDirty: true });
     }
+    amountFollowsReference.current = true;
   };
 
   const handleStudentChange = (studentId: string) => {
     form.setValue("studentId", studentId, { shouldDirty: true });
+    amountFollowsReference.current = true;
     if (!studentId || studentId === NONE_STUDENT) return;
 
     const student = students.find((s) => s.id === studentId);
@@ -164,6 +227,11 @@ export function CashBookEntryFormDialog({
     if (!current) {
       form.setValue("particulars", name, { shouldDirty: true });
     }
+  };
+
+  const handleCategoryChange = (code: string) => {
+    form.setValue("categoryCode", code, { shouldDirty: true });
+    amountFollowsReference.current = true;
   };
 
   const onSubmit = async (values: EntryFormValues) => {
@@ -179,6 +247,19 @@ export function CashBookEntryFormDialog({
       const student = linkedId
         ? students.find((s) => s.id === linkedId)
         : undefined;
+
+      const reference =
+        values.type === "income" && student
+          ? resolveFeeAmountReference({
+              student,
+              categoryCode: values.categoryCode,
+              feeConfigs,
+              feeRecords,
+              cashBookEntries: cashEntries,
+              excludeEntryId: entry?.id,
+              asOfDate: date,
+            })
+          : null;
 
       const payload = {
         type: values.type,
@@ -196,6 +277,11 @@ export function CashBookEntryFormDialog({
             `${student.firstName || ""} ${student.lastName || ""}`.trim()
           : "",
         studentAdmissionNumber: student?.admissionNumber || "",
+        feeReferenceAmount: reference?.amount,
+        feeReferenceKind: reference?.kind,
+        feeReferenceLabel: reference?.label || "",
+        feeConfigId: reference?.feeConfigId || "",
+        feeRecordIds: reference?.feeRecordIds || [],
         createdByUid: entry?.createdByUid || user?.uid,
         createdByName: entry?.createdByName || user?.name,
       };
@@ -232,8 +318,7 @@ export function CashBookEntryFormDialog({
                 : "Add expense"}
           </DialogTitle>
           <DialogDescription>
-            Date {date}. Use mode C/U/B/Q. Link fee income to a student when
-            relevant.
+            Date {date}. Link fee income to a student when relevant.
           </DialogDescription>
         </DialogHeader>
 
@@ -346,7 +431,10 @@ export function CashBookEntryFormDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category code</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value}
+                      onValueChange={handleCategoryChange}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select code" />
@@ -377,6 +465,10 @@ export function CashBookEntryFormDialog({
                         step="1"
                         placeholder="0"
                         {...field}
+                        onChange={(e) => {
+                          amountFollowsReference.current = false;
+                          field.onChange(e);
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
@@ -384,6 +476,19 @@ export function CashBookEntryFormDialog({
                 )}
               />
             </div>
+
+            {selectedType === "income" &&
+              selectedStudent &&
+              selectedCategory &&
+              feeReference && (
+                <p className="text-sm text-muted-foreground -mt-2">
+                  {feeReference.kind === "pending" ? "Pending" : "Structure"}:{" "}
+                  <span className="font-medium text-foreground">
+                    {formatCurrency(feeReference.amount)}
+                  </span>
+                  {feeReference.feeName ? ` · ${feeReference.feeName}` : ""}
+                </p>
+              )}
 
             <FormField
               control={form.control as any}

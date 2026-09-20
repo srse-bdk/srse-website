@@ -81,6 +81,7 @@ const ACCOUNTS_ROUTE_PATTERNS = [
   "/cash-book/weekly",
   "/income-expenses",
   "/financial-activities",
+  "/fees/structure",
   "/students/:studentId",
 ];
 

@@ -325,6 +325,12 @@ function buildAccountsNavigation(): NavigationItem[] {
       roles: ["accounts"],
     },
     {
+      title: "Fee Structure",
+      url: "/fees/structure",
+      icon: Settings,
+      roles: ["accounts"],
+    },
+    {
       title: "Financial Overview",
       url: "/financial-activities",
       icon: BadgeIndianRupee,
