@@ -32,6 +32,7 @@ import {
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { AddOptionalFeeDialog } from "./_components/add-optional-fee-dialog";
+import { StudentCashBookReceipts } from "./_components/student-cash-book-receipts";
 // Import separated components if I had them, but I'll inline for now to keep it simple as per request to "change ui of this page"
 // Actually, I'll build it robustly.
 
@@ -41,6 +42,14 @@ export default function StudentProfilePage() {
   const role = params.role as string;
   const user = useAppStore((state) => state.user);
   const canManageStudent = user?.role === "admin";
+  const canViewCashBook =
+    user?.role === "admin" ||
+    user?.role === "accounts" ||
+    (user?.role === "student" && user.studentId === studentId) ||
+    (user?.role === "parent" &&
+      Boolean(user.validChildrenIds?.includes(studentId)));
+  const linkToCashBook =
+    user?.role === "admin" || user?.role === "accounts";
 
   const {
     data: studentData,
@@ -493,6 +502,15 @@ export default function StudentProfilePage() {
               </CardContent>
             </Card>
           </div>
+
+          {canViewCashBook ? (
+            <StudentCashBookReceipts
+              studentId={student.id}
+              role={role}
+              studentName={student.fullName}
+              linkToCashBook={linkToCashBook}
+            />
+          ) : null}
         </TabsContent>
 
         <TabsContent value="guardians" className="space-y-6">

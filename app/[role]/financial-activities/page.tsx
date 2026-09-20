@@ -1,7 +1,14 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   ChartContainer,
   ChartTooltip,
@@ -10,31 +17,22 @@ import {
 } from "@/components/ui/chart";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useAppStore } from "@/hooks/use-app-store";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
-import type { FeeConfiguration, FeeRecord } from "@/lib/types/fee.type";
-import type { FinancialTransaction } from "@/lib/types/financial.type";
-import type { Student } from "@/lib/types/student.type";
-import { formatCurrency } from "@/lib/utils";
+import type { CashBookEntry, CashBookMode } from "@/lib/types/cash-book.type";
 import {
-  aggregateStudentDueSummaries,
-  calculateStudentDueFromStructure,
-  getAcademicYearForDate,
-} from "@/lib/utils/fee-dues";
+  CASH_BOOK_MODE_LABELS,
+  getCashBookCategoryLabel,
+} from "@/lib/types/cash-book.type";
+import { formatCurrency } from "@/lib/utils";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
+  BookOpen,
   Landmark,
   Scale,
-  WalletCards,
 } from "lucide-react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   Bar,
@@ -66,14 +64,15 @@ const palette = [
 ];
 
 const toDisplayDate = (date: string) =>
-  new Date(date).toLocaleDateString("en-IN", {
+  new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
 
-export default function FinancialActivitiesPage() {
-  const user = useAppStore((state) => state.user);
+export default function FinancialOverviewPage() {
+  const params = useParams();
+  const role = params.role as string;
 
   const defaultStartDate = useMemo(() => {
     const now = new Date();
@@ -85,89 +84,53 @@ export default function FinancialActivitiesPage() {
 
   const [startDate, setStartDate] = useState(defaultStartDate);
   const [endDate, setEndDate] = useState(defaultEndDate);
-  const [selectedCategory, setSelectedCategory] = useState("all");
 
-  const { data: financialData, loading: financialLoading } =
-    useFirebaseRealtime<FinancialTransaction>("financialTransactions", {
-      asArray: true,
-    });
-  const { data: feesData, loading: feesLoading } = useFirebaseRealtime<FeeRecord>(
-    "feePayments",
-    {
-      asArray: true,
-    },
-  );
-  const { data: studentsData } = useFirebaseRealtime<Student>("students", {
-    asArray: true,
-  });
-  const { data: feeConfigsData } = useFirebaseRealtime<FeeConfiguration>(
-    "feeConfigurations",
-    {
-      asArray: true,
-    },
+  const { data: entriesData, loading } = useFirebaseRealtime<CashBookEntry>(
+    "cashBookEntries",
+    { asArray: true },
   );
 
-  const transactions = (financialData as FinancialTransaction[]) || [];
-  const fees = (feesData as FeeRecord[]) || [];
-  const students = (studentsData as Student[]) || [];
-  const feeConfigs = (feeConfigsData as FeeConfiguration[]) || [];
-
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    transactions.forEach((txn) => set.add(txn.category));
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [transactions]);
-
-  const filteredTransactions = useMemo(() => {
-    return transactions
-      .filter((txn) => {
-        const matchesCategory =
-          selectedCategory === "all" || txn.category === selectedCategory;
-        const matchesStart = !startDate || txn.date >= startDate;
-        const matchesEnd = !endDate || txn.date <= endDate;
-        return matchesCategory && matchesStart && matchesEnd;
+  const filtered = useMemo(() => {
+    const rows = ((entriesData as CashBookEntry[]) || []).filter((e) => !e.voided);
+    return rows
+      .filter((entry) => {
+        const matchesStart = !startDate || entry.date >= startDate;
+        const matchesEnd = !endDate || entry.date <= endDate;
+        return matchesStart && matchesEnd;
       })
       .sort((a, b) => {
-        const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+        const dateDiff = b.date.localeCompare(a.date);
         if (dateDiff !== 0) return dateDiff;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        return (
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime()
+        );
       });
-  }, [transactions, selectedCategory, startDate, endDate]);
+  }, [entriesData, startDate, endDate]);
 
   const summary = useMemo(() => {
     let income = 0;
     let expenses = 0;
+    const byMode: Record<CashBookMode, number> = { C: 0, U: 0, B: 0, Q: 0 };
 
-    filteredTransactions.forEach((txn) => {
-      if (txn.type === "income") income += Number(txn.amount) || 0;
-      if (txn.type === "expense") expenses += Number(txn.amount) || 0;
-    });
-
-    const rangeStart = startDate
-      ? new Date(`${startDate}T00:00:00`)
-      : new Date("2000-01-01T00:00:00");
-    const rangeEnd = endDate ? new Date(`${endDate}T23:59:59`) : new Date();
-    const activeAY = getAcademicYearForDate(rangeEnd);
-
-    const dueSummaries = students.map((student) =>
-      calculateStudentDueFromStructure({
-        student,
-        feeConfigs,
-        feeRecords: fees,
-        rangeStart,
-        rangeEnd,
-        academicYear: activeAY,
-      }),
-    );
-    const pendingFees = aggregateStudentDueSummaries(dueSummaries).totalPending;
+    for (const entry of filtered) {
+      const amount = Number(entry.amount) || 0;
+      if (entry.type === "income") {
+        income += amount;
+        byMode[entry.mode] += amount;
+      } else {
+        expenses += amount;
+      }
+    }
 
     return {
       income,
       expenses,
       netBalance: income - expenses,
-      pendingFees,
+      byMode,
+      count: filtered.length,
     };
-  }, [filteredTransactions, fees, students, feeConfigs, startDate, endDate]);
+  }, [filtered]);
 
   const monthlyData = useMemo(() => {
     if (!startDate || !endDate) return [];
@@ -200,21 +163,24 @@ export default function FinancialActivitiesPage() {
       cursor.setMonth(cursor.getMonth() + 1);
     }
 
-    filteredTransactions.forEach((txn) => {
+    filtered.forEach((txn) => {
       const key = txn.date.slice(0, 7);
       const bucket = buckets.find((item) => item.key === key);
       if (!bucket) return;
-      if (txn.type === "income") bucket.income += txn.amount;
-      else bucket.expense += txn.amount;
+      const amount = Number(txn.amount) || 0;
+      if (txn.type === "income") bucket.income += amount;
+      else bucket.expense += amount;
     });
 
     return buckets;
-  }, [filteredTransactions, startDate, endDate]);
+  }, [filtered, startDate, endDate]);
 
   const categoryBreakdown = useMemo(() => {
     const map = new Map<string, number>();
-    filteredTransactions.forEach((txn) => {
-      map.set(txn.category, (map.get(txn.category) || 0) + txn.amount);
+    filtered.forEach((txn) => {
+      const label = getCashBookCategoryLabel(txn.categoryCode);
+      const amount = Number(txn.amount) || 0;
+      map.set(label, (map.get(label) || 0) + amount);
     });
 
     return [...map.entries()]
@@ -225,41 +191,45 @@ export default function FinancialActivitiesPage() {
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 8);
-  }, [filteredTransactions]);
+  }, [filtered]);
 
-  const recentActivities = filteredTransactions.slice(0, 8);
-
-  if (user?.role === "parent") {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>No Access</CardTitle>
-          <CardDescription>
-            Financial activities are visible only to Admin and Staff users.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
+  const recentActivities = filtered.slice(0, 10);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-6 p-4 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Financial Activities</h1>
-          <p className="text-muted-foreground">
-            Overview of total income, expenses, net balance, and recent transactions.
+          <h1 className="text-2xl font-bold tracking-tight">
+            Financial Overview
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Overall financial status for a date range — totals, charts, and
+            recent activity from the cash book.
           </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <Link href={`/${role}/income-expenses`}>View statement</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href={`/${role}/cash-book`}>
+              <BookOpen className="mr-2 h-4 w-4" />
+              Cash book
+            </Link>
+          </Button>
         </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Period</CardTitle>
+          <CardDescription>
+            Choose from/to dates to refresh the overview.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
+        <CardContent className="grid gap-3 sm:grid-cols-2 max-w-lg">
           <div className="space-y-1">
-            <Label>From Date</Label>
+            <Label>From</Label>
             <Input
               type="date"
               value={startDate}
@@ -267,37 +237,21 @@ export default function FinancialActivitiesPage() {
             />
           </div>
           <div className="space-y-1">
-            <Label>To Date</Label>
+            <Label>To</Label>
             <Input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
-          <div className="space-y-1">
-            <Label>Category</Label>
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
-              Total Income
+              Total income
               <ArrowUpCircle className="h-4 w-4 text-emerald-600" />
             </div>
             <div className="mt-2 text-2xl font-bold text-emerald-700">
@@ -308,7 +262,7 @@ export default function FinancialActivitiesPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
-              Total Expenses
+              Total expenses
               <ArrowDownCircle className="h-4 w-4 text-rose-600" />
             </div>
             <div className="mt-2 text-2xl font-bold text-rose-700">
@@ -319,58 +273,96 @@ export default function FinancialActivitiesPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
-              Net Balance
+              Net balance
               <Scale className="h-4 w-4 text-blue-600" />
             </div>
             <div
-              className={`mt-2 text-2xl font-bold ${summary.netBalance >= 0 ? "text-blue-700" : "text-amber-700"}`}
+              className={`mt-2 text-2xl font-bold ${
+                summary.netBalance >= 0 ? "text-blue-700" : "text-amber-700"
+              }`}
             >
               {formatCurrency(summary.netBalance)}
             </div>
           </CardContent>
         </Card>
-        {/* <Card>
+        <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
-              Pending Fees
-              <WalletCards className="h-4 w-4 text-orange-600" />
+              Entries in period
+              <Landmark className="h-4 w-4" />
             </div>
-            <div className="mt-2 text-2xl font-bold text-orange-700">
-              {formatCurrency(summary.pendingFees)}
-            </div>
+            <div className="mt-2 text-2xl font-bold">{summary.count}</div>
           </CardContent>
-        </Card> */}
+        </Card>
       </div>
+
+      <Card className="shadow-none">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Income by payment mode</CardTitle>
+          <CardDescription>
+            How money came in during this period (cash vs UPI vs bank vs cheque).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {(Object.keys(CASH_BOOK_MODE_LABELS) as CashBookMode[]).map(
+              (mode) => (
+                <div key={mode} className="rounded-lg border px-3 py-3">
+                  <p className="text-sm text-muted-foreground">
+                    {CASH_BOOK_MODE_LABELS[mode]}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-emerald-700">
+                    {formatCurrency(summary.byMode[mode])}
+                  </p>
+                </div>
+              ),
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Income vs Expenses</CardTitle>
+            <CardTitle>Income vs expenses</CardTitle>
             <CardDescription>Monthly view for selected period</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={summaryChartConfig} className="h-[280px] w-full">
-              <BarChart data={monthlyData}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="income" fill="var(--color-income)" radius={6} />
-                <Bar dataKey="expense" fill="var(--color-expense)" radius={6} />
-              </BarChart>
-            </ChartContainer>
+            {monthlyData.length === 0 ? (
+              <div className="flex h-[280px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                No data for this period
+              </div>
+            ) : (
+              <ChartContainer
+                config={summaryChartConfig}
+                className="h-[280px] w-full"
+              >
+                <BarChart data={monthlyData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="month" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="income" fill="var(--color-income)" radius={6} />
+                  <Bar
+                    dataKey="expense"
+                    fill="var(--color-expense)"
+                    radius={6}
+                  />
+                </BarChart>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Category-wise Breakdown</CardTitle>
-            <CardDescription>Top categories by transaction amount</CardDescription>
+            <CardTitle>Category-wise breakdown</CardTitle>
+            <CardDescription>Top categories by amount</CardDescription>
           </CardHeader>
           <CardContent>
             {categoryBreakdown.length === 0 ? (
               <div className="flex h-[280px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                No category data available for selected filters.
+                No category data for selected period.
               </div>
             ) : (
               <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
@@ -399,14 +391,16 @@ export default function FinancialActivitiesPage() {
                       key={item.name}
                       className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs"
                     >
-                      <span className="inline-flex items-center gap-2">
+                      <span className="inline-flex items-center gap-2 min-w-0">
                         <span
-                          className="h-2 w-2 rounded-full"
+                          className="h-2 w-2 shrink-0 rounded-full"
                           style={{ backgroundColor: item.fill }}
                         />
                         <span className="line-clamp-1">{item.name}</span>
                       </span>
-                      <span className="font-semibold">{formatCurrency(item.value)}</span>
+                      <span className="font-semibold shrink-0">
+                        {formatCurrency(item.value)}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -420,18 +414,21 @@ export default function FinancialActivitiesPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Landmark className="h-5 w-5" />
-            Recent Activity
+            Recent activity
           </CardTitle>
           <CardDescription>
-            Latest income and expense entries with date, category, amount, and notes.
+            Latest cash book entries in this period.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {financialLoading || feesLoading ? (
-            <div className="py-6 text-center text-muted-foreground">Loading activity...</div>
+          {loading ? (
+            <div className="py-6 text-center text-muted-foreground">
+              Loading…
+            </div>
           ) : recentActivities.length === 0 ? (
             <div className="py-6 text-center text-muted-foreground">
-              No transactions found for selected filters.
+              No cash book entries for this period. Record them in the daily
+              cash book.
             </div>
           ) : (
             <div className="space-y-2">
@@ -441,7 +438,7 @@ export default function FinancialActivitiesPage() {
                   className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge
                         variant="outline"
                         className={
@@ -452,15 +449,29 @@ export default function FinancialActivitiesPage() {
                       >
                         {txn.type}
                       </Badge>
-                      <span className="text-sm font-medium">{txn.category}</span>
+                      <span className="text-sm font-medium">
+                        {getCashBookCategoryLabel(txn.categoryCode)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {CASH_BOOK_MODE_LABELS[txn.mode]}
+                      </span>
                     </div>
-                    <p className="text-xs text-muted-foreground">{toDisplayDate(txn.date)}</p>
-                    {txn.notes && <p className="text-sm text-muted-foreground">{txn.notes}</p>}
+                    <p className="text-xs text-muted-foreground">
+                      {toDisplayDate(txn.date)}
+                      {txn.studentName || txn.particulars
+                        ? ` · ${txn.studentName || txn.particulars}`
+                        : ""}
+                    </p>
                   </div>
                   <div
-                    className={`text-lg font-bold ${txn.type === "income" ? "text-emerald-700" : "text-rose-700"}`}
+                    className={`text-lg font-bold ${
+                      txn.type === "income"
+                        ? "text-emerald-700"
+                        : "text-rose-700"
+                    }`}
                   >
-                    {txn.type === "income" ? "+" : "-"} {formatCurrency(txn.amount)}
+                    {txn.type === "income" ? "+" : "−"}{" "}
+                    {formatCurrency(txn.amount)}
                   </div>
                 </div>
               ))}
@@ -471,4 +482,3 @@ export default function FinancialActivitiesPage() {
     </div>
   );
 }
-

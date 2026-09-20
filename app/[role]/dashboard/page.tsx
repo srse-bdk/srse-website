@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils";
 import type { Student } from "@/lib/types/student.type";
 import { StaffDashboard } from "./_components/staff-dashboard";
 import { StudentDashboard } from "./_components/student-dashboard";
+import { AccountsDashboard } from "./_components/accounts-dashboard";
 
 interface DashboardStats {
   totalStudents: number;
@@ -222,7 +223,11 @@ export default function DashboardPage() {
       try {
         setLoading(true);
 
-        if (user?.role === "staff" || user?.role === "student") {
+        if (
+          user?.role === "staff" ||
+          user?.role === "student" ||
+          user?.role === "accounts"
+        ) {
           return;
         }
 
@@ -448,6 +453,10 @@ export default function DashboardPage() {
 
   if (user?.role === "student") {
     return <StudentDashboard />;
+  }
+
+  if (user?.role === "accounts") {
+    return <AccountsDashboard />;
   }
 
   if (loading) {

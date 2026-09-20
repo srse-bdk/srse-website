@@ -16,6 +16,8 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import { FeeReceiptDialog } from "./fee-receipt-dialog";
+import { StudentCashBookReceipts } from "@/app/[role]/students/[id]/_components/student-cash-book-receipts";
+import { useParams } from "next/navigation";
 
 interface StudentOutstandingFeesPageProps {
   student: Student | null;
@@ -39,6 +41,8 @@ export function StudentOutstandingFeesPage({
   fees,
   payments,
 }: StudentOutstandingFeesPageProps) {
+  const params = useParams();
+  const role = (params.role as string) || "student";
   const [selectedFeeId, setSelectedFeeId] = useState<string>("");
   const [transactionId, setTransactionId] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -221,6 +225,15 @@ export function StudentOutstandingFeesPage({
             </div>
           </div>
         </div>
+
+        {student.id ? (
+          <StudentCashBookReceipts
+            studentId={student.id}
+            role={role}
+            studentName={student.fullName}
+            linkToCashBook={false}
+          />
+        ) : null}
 
         <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
           <Card className="border-slate-200 shadow-sm">

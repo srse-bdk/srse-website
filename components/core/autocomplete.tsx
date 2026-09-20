@@ -41,8 +41,11 @@ export function Autocomplete({
   // Filter options based on search
   const filteredOptions = React.useMemo(() => {
     if (!search) return options;
-    return options.filter((option) =>
-      option.label.toLowerCase().includes(search.toLowerCase())
+    const q = search.toLowerCase();
+    return options.filter(
+      (option) =>
+        option.label.toLowerCase().includes(q) ||
+        option.subLabel?.toLowerCase().includes(q),
     );
   }, [options, search]);
 

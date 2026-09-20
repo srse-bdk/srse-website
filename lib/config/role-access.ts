@@ -10,6 +10,9 @@ export function getDefaultRouteForRole(role: UserRole): string {
   if (role === "scanner") {
     return "/gate";
   }
+  if (role === "accounts") {
+    return "/accounts/cash-book";
+  }
   return `/${role}/dashboard`;
 }
 
@@ -71,6 +74,16 @@ const STAFF_ROUTE_PATTERNS = [
 
 const SCANNER_ROUTE_PATTERNS = ["/scanner", "/scanner/entry", "/scanner/exit"];
 
+const ACCOUNTS_ROUTE_PATTERNS = [
+  "/dashboard",
+  "/settings",
+  "/cash-book",
+  "/cash-book/weekly",
+  "/income-expenses",
+  "/financial-activities",
+  "/students/:studentId",
+];
+
 function matchesAnyPattern(patterns: string[], path: string): boolean {
   return patterns.some((pattern) => matchesRoute(pattern, path));
 }
@@ -125,6 +138,10 @@ export function canRoleAccessPath(
     }
 
     return matchesAnyPattern(STAFF_ROUTE_PATTERNS, path);
+  }
+
+  if (role === "accounts") {
+    return matchesAnyPattern(ACCOUNTS_ROUTE_PATTERNS, path);
   }
 
   return false;

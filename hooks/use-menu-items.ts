@@ -201,14 +201,24 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
       { title: "Dashboard", url: "/fees", icon: Home },
       { title: "Fee Structure", url: "/fees/structure", icon: Settings },
       {
-        title: "Financial Activities",
+        title: "Financial Overview",
         url: "/financial-activities",
         icon: BadgeIndianRupee,
       },
       {
-        title: "Income / Expenses",
+        title: "Income & Expense Statement",
         url: "/income-expenses",
         icon: TrendingUp,
+      },
+      {
+        title: "Daily Cash Book",
+        url: "/cash-book",
+        icon: BookOpen,
+      },
+      {
+        title: "Weekly Cash Summary",
+        url: "/cash-book/weekly",
+        icon: CalendarDays,
       },
     ],
   },
@@ -294,6 +304,41 @@ function buildStudentNavigation(studentId?: string): NavigationItem[] {
   return items;
 }
 
+function buildAccountsNavigation(): NavigationItem[] {
+  return [
+    {
+      title: "Dashboard",
+      url: "/dashboard",
+      icon: Home,
+      roles: ["accounts"],
+    },
+    {
+      title: "Daily Cash Book",
+      url: "/cash-book",
+      icon: BookOpen,
+      roles: ["accounts"],
+    },
+    {
+      title: "Weekly Summary",
+      url: "/cash-book/weekly",
+      icon: CalendarDays,
+      roles: ["accounts"],
+    },
+    {
+      title: "Financial Overview",
+      url: "/financial-activities",
+      icon: BadgeIndianRupee,
+      roles: ["accounts"],
+    },
+    {
+      title: "Statement",
+      url: "/income-expenses",
+      icon: TrendingUp,
+      roles: ["accounts"],
+    },
+  ];
+}
+
 export function useMenuItems() {
   const user = useAppStore((state) => state.user);
   const role = user?.role;
@@ -307,6 +352,8 @@ export function useMenuItems() {
         return buildStaffNavigation(user.uid);
       case "student":
         return buildStudentNavigation(user.studentId);
+      case "accounts":
+        return buildAccountsNavigation();
       case "parent":
         return [];
       default:
