@@ -27,6 +27,12 @@ export interface FeePayment extends BaseEntity {
   approvedAt?: string;
   approvedBy?: "admin" | "staff";
 
+  /** Snapshot fields for printed school receipt */
+  studentClass?: string;
+  rollNumber?: string;
+  session?: string;
+  abacusDrawing?: string;
+
   // Backward compatibility fields used in some UI screens
   status?: FeeStatus;
   title?: string;

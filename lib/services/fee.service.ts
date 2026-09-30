@@ -341,10 +341,20 @@ export const feeService = {
     const receiptNumber =
       existingPayment?.receiptNumber || buildReceiptNumber(input.feeId);
 
+    const studentRaw = await mutate({
+      action: "get",
+      path: `students/${fee.studentId}`,
+    });
+    const student = studentRaw as Student | null;
+    const paymentDateObj = new Date(paidOn);
+    const session = getAcademicYearForDate(
+      Number.isNaN(paymentDateObj.getTime()) ? new Date() : paymentDateObj,
+    );
+
     const paymentData: Omit<FeePayment, "id"> = {
       feeId: input.feeId,
       studentId: fee.studentId,
-      studentName: fee.studentName,
+      studentName: fee.studentName || student?.fullName || "",
       feeTitle: fee.title,
       feeCategory: fee.category,
       totalFeeAmount: amount,
@@ -366,6 +376,10 @@ export const feeService = {
       approvalUpdatedAt: nowISO,
       approvedAt: nowISO,
       approvedBy: input.paidBy === "admin" ? "admin" : "staff",
+      studentClass: student?.currentClass || fee.classId || "",
+      rollNumber: student?.rollNumber || "",
+      session,
+      abacusDrawing: existingPayment?.abacusDrawing || "",
       createdAt: existingPayment?.createdAt || nowISO,
       updatedAt: nowISO,
     };

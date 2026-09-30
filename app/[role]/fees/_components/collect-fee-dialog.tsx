@@ -17,6 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { FeeReceiptDialog } from "./fee-receipt-dialog";
 
 const collectFeeSchema = z.object({
     feeId: z.string().min(1, "Please select a fee to pay"),
@@ -37,6 +38,8 @@ interface CollectFeeDialogProps {
 
 export function CollectFeeDialog({ student, open, onOpenChange }: CollectFeeDialogProps) {
     const [loading, setLoading] = useState(false);
+    const [receiptPayment, setReceiptPayment] = useState<FeePayment | null>(null);
+    const [receiptOpen, setReceiptOpen] = useState(false);
     const { data: feesData } = useFirebaseRealtime<FeeRecord>("feeIssued", {
         asArray: true,
     });
@@ -136,6 +139,8 @@ export function CollectFeeDialog({ student, open, onOpenChange }: CollectFeeDial
             });
 
             toast.success(`Payment recorded. Receipt: ${payment.receiptNumber}`);
+            setReceiptPayment(payment);
+            setReceiptOpen(true);
 
             onOpenChange(false);
             form.reset();
@@ -148,6 +153,7 @@ export function CollectFeeDialog({ student, open, onOpenChange }: CollectFeeDial
     }
 
     return (
+        <>
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[450px]">
                 <DialogHeader>
@@ -296,5 +302,12 @@ export function CollectFeeDialog({ student, open, onOpenChange }: CollectFeeDial
                 </Form>
             </DialogContent>
         </Dialog>
+
+        <FeeReceiptDialog
+            payment={receiptPayment}
+            open={receiptOpen}
+            onOpenChange={setReceiptOpen}
+        />
+        </>
     );
 }

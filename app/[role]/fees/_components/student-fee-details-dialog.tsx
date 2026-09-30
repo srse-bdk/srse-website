@@ -15,15 +15,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useAppStore } from "@/hooks/use-app-store";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import type { FeePayment } from "@/lib/types/fee-payment.type";
 import type { FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
+import { feeService } from "@/lib/services/fee.service";
 import { formatCurrency } from "@/lib/utils";
 import { format, isValid } from "date-fns";
-import { Calendar, Eye, Tag, Wallet } from "lucide-react";
+import {
+  Banknote,
+  Calendar,
+  Eye,
+  Loader2,
+  Tag,
+  Wallet,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { FeeReceiptDialog } from "./fee-receipt-dialog";
 
 const safeFormatDate = (dateStr: any, formatStr: string) => {
@@ -43,20 +53,37 @@ export function StudentFeeDetailsDialog({
   open,
   onOpenChange,
 }: StudentFeeDetailsDialogProps) {
-  const [selectedPayment, setSelectedPayment] = useState<FeePayment | null>(null);
+  const user = useAppStore((s) => s.user);
+  const canMarkPaid =
+    user?.role === "admin" || user?.role === "accounts" || user?.role === "staff";
+
+  const [selectedPayment, setSelectedPayment] = useState<FeePayment | null>(
+    null,
+  );
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
 
   const { data: issuedFeesData } = useFirebaseRealtime<FeeRecord>("feeIssued", {
     asArray: true,
   });
-  const { data: feePaymentsData } = useFirebaseRealtime<FeePayment>("feePayments", {
-    asArray: true,
-  });
+  const { data: feePaymentsData } = useFirebaseRealtime<FeePayment>(
+    "feePayments",
+    {
+      asArray: true,
+    },
+  );
   const fees = (issuedFeesData as FeeRecord[]) || [];
   const payments = (feePaymentsData as FeePayment[]) || [];
 
   const studentFees = useMemo(
-    () => fees.filter((f) => f.studentId === student?.id),
+    () =>
+      fees
+        .filter((f) => f.studentId === student?.id)
+        .sort(
+          (a, b) =>
+            new Date(a.dueDate || 0).getTime() -
+            new Date(b.dueDate || 0).getTime(),
+        ),
     [fees, student?.id],
   );
 
@@ -72,15 +99,59 @@ export function StudentFeeDetailsDialog({
     [payments, student?.id],
   );
 
+  const paymentsByFeeId = useMemo(() => {
+    const map = new Map<string, FeePayment>();
+    for (const p of studentPayments) {
+      if (p.feeId && p.approvalStatus === "approved") {
+        map.set(p.feeId, p);
+      }
+    }
+    return map;
+  }, [studentPayments]);
+
   const pendingFromIssued = useMemo(
     () =>
       studentFees.reduce(
         (sum, fee) =>
-          sum + Math.max(0, (Number(fee.amount) || 0) - (Number(fee.paidAmount) || 0)),
+          sum +
+          Math.max(0, (Number(fee.amount) || 0) - (Number(fee.paidAmount) || 0)),
         0,
       ),
     [studentFees],
   );
+
+  const handleMarkPaid = async (fee: FeeRecord) => {
+    const pending = Math.max(
+      0,
+      (Number(fee.amount) || 0) - (Number(fee.paidAmount) || 0),
+    );
+    if (pending <= 0) {
+      toast.info("This fee is already fully paid");
+      return;
+    }
+
+    setPayingFeeId(fee.id);
+    try {
+      const payment = await feeService.recordFeePayment({
+        feeId: fee.id,
+        amountPaid: pending,
+        paymentMethod: "cash",
+        paymentDate: new Date().toISOString(),
+        remarks: `Marked paid — ${fee.title}`,
+        paidBy: user?.role === "admin" ? "admin" : "staff",
+      });
+      toast.success(`Paid. Receipt ${payment.receiptNumber} created.`);
+      setSelectedPayment(payment);
+      setReceiptOpen(true);
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to mark fee as paid",
+      );
+    } finally {
+      setPayingFeeId(null);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -117,7 +188,7 @@ export function StudentFeeDetailsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[95vw] sm:max-w-[900px] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="w-[95vw] sm:max-w-[960px] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wallet className="h-5 w-5 text-primary" />
@@ -131,7 +202,9 @@ export function StudentFeeDetailsDialog({
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                   Admission No
                 </p>
-                <p className="text-sm font-bold mt-1">{student?.admissionNumber}</p>
+                <p className="text-sm font-bold mt-1">
+                  {student?.admissionNumber}
+                </p>
               </div>
               <div className="bg-muted/50 p-3 rounded-xl border">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -152,7 +225,10 @@ export function StudentFeeDetailsDialog({
                   Last Payment
                 </p>
                 <p className="text-sm font-bold mt-1">
-                  {safeFormatDate(studentPayments[0]?.paymentDate, "dd MMM yyyy")}
+                  {safeFormatDate(
+                    studentPayments[0]?.paymentDate,
+                    "dd MMM yyyy",
+                  )}
                 </p>
               </div>
             </div>
@@ -170,46 +246,91 @@ export function StudentFeeDetailsDialog({
                       <TableHead>Amount</TableHead>
                       <TableHead>Paid</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {studentFees.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={5}
+                          colSpan={6}
                           className="text-center h-24 text-muted-foreground"
                         >
                           No fee records found for this student.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      studentFees.map((fee) => (
-                        <TableRow key={fee.id} className="hover:bg-muted/30 transition-colors">
-                          <TableCell>
-                            <div className="flex flex-col">
-                              <span className="font-bold text-xs sm:text-sm truncate max-w-[180px] sm:max-w-none">
-                                {fee.title}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                <Tag className="h-2.5 w-2.5" /> {fee.category}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-[10px] sm:text-sm">
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Calendar className="h-3 w-3" />
-                              {safeFormatDate(fee.dueDate, "dd MMM yyyy")}
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-black text-xs sm:text-sm">
-                            {formatCurrency(fee.amount)}
-                          </TableCell>
-                          <TableCell className="text-emerald-600 font-black text-xs sm:text-sm">
-                            {formatCurrency(fee.paidAmount)}
-                          </TableCell>
-                          <TableCell>{getStatusBadge(fee.status)}</TableCell>
-                        </TableRow>
-                      ))
+                      studentFees.map((fee) => {
+                        const pending = Math.max(
+                          0,
+                          (Number(fee.amount) || 0) -
+                            (Number(fee.paidAmount) || 0),
+                        );
+                        const linkedPayment = paymentsByFeeId.get(fee.id);
+                        const isPaying = payingFeeId === fee.id;
+
+                        return (
+                          <TableRow
+                            key={fee.id}
+                            className="hover:bg-muted/30 transition-colors"
+                          >
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span className="font-bold text-xs sm:text-sm truncate max-w-[180px] sm:max-w-none">
+                                  {fee.title}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                  <Tag className="h-2.5 w-2.5" /> {fee.category}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-[10px] sm:text-sm">
+                              <div className="flex items-center gap-1 text-muted-foreground">
+                                <Calendar className="h-3 w-3" />
+                                {safeFormatDate(fee.dueDate, "dd MMM yyyy")}
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-black text-xs sm:text-sm">
+                              {formatCurrency(fee.amount)}
+                            </TableCell>
+                            <TableCell className="text-emerald-600 font-black text-xs sm:text-sm">
+                              {formatCurrency(fee.paidAmount)}
+                            </TableCell>
+                            <TableCell>{getStatusBadge(fee.status)}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                {linkedPayment && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedPayment(linkedPayment);
+                                      setReceiptOpen(true);
+                                    }}
+                                  >
+                                    <Eye className="mr-1 h-3.5 w-3.5" />
+                                    Receipt
+                                  </Button>
+                                )}
+                                {canMarkPaid && pending > 0 && (
+                                  <Button
+                                    size="sm"
+                                    disabled={isPaying}
+                                    onClick={() => handleMarkPaid(fee)}
+                                  >
+                                    {isPaying ? (
+                                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Banknote className="mr-1 h-3.5 w-3.5" />
+                                    )}
+                                    Mark paid
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -246,12 +367,20 @@ export function StudentFeeDetailsDialog({
                     ) : (
                       studentPayments.map((payment) => (
                         <TableRow key={payment.id}>
-                          <TableCell>{safeFormatDate(payment.paymentDate, "dd MMM yyyy")}</TableCell>
-                          <TableCell className="font-mono text-xs">{payment.receiptNumber}</TableCell>
+                          <TableCell>
+                            {safeFormatDate(payment.paymentDate, "dd MMM yyyy")}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {payment.receiptNumber}
+                          </TableCell>
                           <TableCell>{payment.feeTitle}</TableCell>
-                          <TableCell className="uppercase">{payment.paymentMethod}</TableCell>
+                          <TableCell className="uppercase">
+                            {payment.paymentMethod}
+                          </TableCell>
                           <TableCell className="font-semibold text-emerald-700">
-                            {formatCurrency(payment.amountPaid || payment.paidAmount || 0)}
+                            {formatCurrency(
+                              payment.amountPaid || payment.paidAmount || 0,
+                            )}
                           </TableCell>
                           <TableCell>
                             <Badge
