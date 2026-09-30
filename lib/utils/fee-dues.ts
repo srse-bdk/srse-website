@@ -34,10 +34,28 @@ function getCycleStep(cycle: FeeFrequency) {
   return 0;
 }
 
+/**
+ * Date from which fees start for a student.
+ * Prefer admissionDate so late DB imports (createdAt) do not skip earlier months.
+ */
 export function getStudentFeeAnchorDate(student: Student) {
-  const created = student.createdAt ? new Date(student.createdAt) : new Date();
-  const admission = student.admissionDate ? new Date(student.admissionDate) : created;
-  return admission > created ? admission : created;
+  if (student.admissionDate) {
+    const admission = new Date(student.admissionDate);
+    if (!Number.isNaN(admission.getTime())) return admission;
+  }
+  if (student.createdAt) {
+    const created = new Date(student.createdAt);
+    if (!Number.isNaN(created.getTime())) return created;
+  }
+  return new Date();
+}
+
+/**
+ * First month tuition is billed in an AY when re-admission covers April.
+ */
+export function getTuitionStartAfterReadmission(academicYear: string) {
+  const { start } = getAcademicYearRange(academicYear);
+  return addMonths(startOfMonth(start), 1); // May
 }
 
 function getOccurrencesInRange(

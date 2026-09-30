@@ -5,6 +5,7 @@ import {
   getAcademicYearForDate,
   getAcademicYearRange,
   getStudentFeeAnchorDate,
+  getTuitionStartAfterReadmission,
 } from "@/lib/utils/fee-dues";
 import { getArrFromObj } from "@ashirbad/js-core";
 import { mutate } from "@atechhub/firebase";
@@ -16,6 +17,7 @@ import {
   isSelectableFeeIncluded,
   isTuitionFeeConfig,
   shouldSkipTuitionPeriodForReadmission,
+  studentHasReadmissionIncluded,
 } from "@/lib/utils/student-selectable-fees";
 
 interface RecordFeePaymentInput {
@@ -132,15 +134,28 @@ function buildFeeIssueRecord(params: {
       : Number(config.classFees?.[classId] || 0);
   if (amount <= 0) return null;
 
-  const periodKey = getIssuePeriodKey(config.cycle, issueDate);
-  const recordId = `${slug(config.id)}_${slug(student.id)}_${slug(periodKey)}`;
-  const dueDate = format(endOfMonth(issueDate), "yyyy-MM-dd");
   const isReadmission = configMatchesSelectableKind(config, "readmission");
+  const isAdmission = configMatchesSelectableKind(config, "admission");
+  // Pin admission / re-admission to April of the academic year.
+  const ayForIssue = getAcademicYearForDate(issueDate);
+  const { start: ayStart } = getAcademicYearRange(ayForIssue);
+  const displayDate =
+    (isReadmission || isAdmission) && config.cycle === "one-time"
+      ? startOfMonth(ayStart)
+      : issueDate;
+  const periodKey =
+    isReadmission || isAdmission
+      ? `${ayForIssue.split("-")[0]}-04`
+      : getIssuePeriodKey(config.cycle, issueDate);
+  const recordId = `${slug(config.id)}_${slug(student.id)}_${slug(periodKey)}`;
+  const dueDate = format(endOfMonth(displayDate), "yyyy-MM-dd");
   const title =
     config.cycle === "one-time"
       ? isReadmission
-        ? `${config.name} (includes April tuition)`
-        : config.name
+        ? `April ${config.name} (includes April tuition)`
+        : isAdmission
+          ? `April ${config.name}`
+          : config.name
       : config.cycle === "annually"
         ? `${format(issueDate, "yyyy")} ${config.name}`
         : config.cycle === "quarterly"
@@ -175,13 +190,41 @@ function buildFeeIssueRecord(params: {
 function studentEligibleForPeriod(
   student: Student | Record<string, any>,
   issueDate: Date,
-  cycle: FeeConfiguration["cycle"],
+  config: FeeConfiguration,
+  allConfigs: FeeConfiguration[],
 ): boolean {
   if (student.status && student.status !== "active") return false;
-  const anchor = getStudentFeeAnchorDate(student as Student);
-  if (cycle === "one-time") {
-    return startOfMonth(anchor) <= startOfMonth(issueDate);
+
+  // Re-admission / admission one-time fees are for the AY (April), not gated
+  // by late createdAt — only by include/exclude assignment.
+  if (configMatchesSelectableKind(config, "readmission")) {
+    return isSelectableFeeIncluded(student as Student, config);
   }
+  if (configMatchesSelectableKind(config, "admission")) {
+    if ((student.excludedFeeConfigIds || []).includes(config.id)) return false;
+    if (config.isOptional) {
+      return isSelectableFeeIncluded(student as Student, config);
+    }
+    return true;
+  }
+
+  const academicYear = getAcademicYearForDate(issueDate);
+  const hasReadmission = studentHasReadmissionIncluded(
+    student as Student,
+    allConfigs,
+  );
+
+  // Continuing students with re-admission: tuition from May of this AY.
+  if (
+    hasReadmission &&
+    config.cycle === "monthly" &&
+    isTuitionFeeConfig(config)
+  ) {
+    const tuitionStart = getTuitionStartAfterReadmission(academicYear);
+    return startOfMonth(issueDate) >= startOfMonth(tuitionStart);
+  }
+
+  const anchor = getStudentFeeAnchorDate(student as Student);
   return startOfMonth(anchor) <= startOfMonth(issueDate);
 }
 
@@ -503,7 +546,7 @@ export const feeService = {
 
     for (const issueDate of periodDates) {
       for (const student of students) {
-        if (!studentEligibleForPeriod(student, issueDate, config.cycle)) {
+        if (!studentEligibleForPeriod(student, issueDate, config, configs)) {
           continue;
         }
         // Optional fees are only issued when explicitly assigned to the student.
