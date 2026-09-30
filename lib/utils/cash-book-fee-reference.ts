@@ -183,6 +183,9 @@ function structureAmountForStudent(
   config: FeeConfiguration,
   student: Student,
 ): number {
+  if ((student.excludedFeeConfigIds || []).includes(config.id)) {
+    return 0;
+  }
   const classKey = student.currentClass || "";
   if (classKey && config.classFees?.[classKey] != null) {
     return Number(config.classFees[classKey]) || 0;

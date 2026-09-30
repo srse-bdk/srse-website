@@ -82,7 +82,8 @@ export function calculateStudentDueFromStructure(params: {
     (cfg) =>
       !cfg.isOptional &&
       cfg.academicYear === academicYear &&
-      cfg.classFees?.[classKey] !== undefined,
+      cfg.classFees?.[classKey] !== undefined &&
+      !(student.excludedFeeConfigIds || []).includes(cfg.id),
   );
 
   const expectedMandatoryDue = mandatoryConfigs.reduce((sum, cfg) => {

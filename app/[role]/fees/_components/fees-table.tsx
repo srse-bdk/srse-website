@@ -46,10 +46,12 @@ import {
     Eye,
     MoreHorizontal,
     Search,
+    Settings2,
     Wallet,
 } from "lucide-react";
 import { useState } from "react";
 import { CollectFeeDialog } from "./collect-fee-dialog";
+import { ManageStudentExtraFeesDialog } from "./manage-student-extra-fees-dialog";
 import { ParentPayFeeDialog } from "./parent-pay-fee-dialog";
 import { StudentFeeDetailsDialog } from "./student-fee-details-dialog";
 
@@ -77,8 +79,11 @@ export function FeesTable({
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isCollectOpen, setIsCollectOpen] = useState(false);
   const [isParentPayOpen, setIsParentPayOpen] = useState(false);
+  const [isExtraFeesOpen, setIsExtraFeesOpen] = useState(false);
   const user = useAppStore((state) => state.user);
   const isParent = user?.role === "parent";
+  const canManageExtraFees =
+    user?.role === "admin" || user?.role === "accounts";
 
   const monthRange = getMonthlyRange(selectedMonth);
   const ayRange = getAcademicYearRange(selectedAcademicYear);
@@ -112,13 +117,13 @@ export function FeesTable({
       | "partial"
       | "pending"
       | "pending_verification"
-      | "overdue" = "paid";
+      | "overdue"
+      | "no_fee" = "no_fee";
     const hasPendingVerification = studentFees.some(
       (fee) => fee.status === "pending_verification",
     );
-    
+
     if (totalDue > 0) {
-      // Fees are expected for this student
       if (balance <= 0) {
         status = "paid";
       } else if (hasPendingVerification) {
@@ -129,7 +134,6 @@ export function FeesTable({
         status = "pending";
       }
     }
-    // If totalDue === 0, status remains "paid" (no dues expected)
 
     // Get primary guardian
     const guardian =
@@ -184,6 +188,12 @@ export function FeesTable({
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case "no_fee":
+        return (
+          <Badge variant="secondary" className="border-none">
+            No fee
+          </Badge>
+        );
       case "paid":
         return (
           <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-none">
@@ -376,6 +386,17 @@ export function FeesTable({
                           >
                             <CreditCard className="mr-2 h-4 w-4" /> Collect Fee
                           </DropdownMenuItem>
+                          {canManageExtraFees && (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedStudent(item.student);
+                                setIsExtraFeesOpen(true);
+                              }}
+                            >
+                              <Settings2 className="mr-2 h-4 w-4" />{" "}
+                              Admission / Uniform / Transport
+                            </DropdownMenuItem>
+                          )}
                           {isParent && (
                             <DropdownMenuItem
                               className="text-primary font-bold"
@@ -414,6 +435,12 @@ export function FeesTable({
         student={selectedStudent}
         open={isParentPayOpen}
         onOpenChange={setIsParentPayOpen}
+      />
+
+      <ManageStudentExtraFeesDialog
+        student={selectedStudent}
+        open={isExtraFeesOpen}
+        onOpenChange={setIsExtraFeesOpen}
       />
     </div>
   );

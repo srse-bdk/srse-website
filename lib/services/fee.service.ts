@@ -111,8 +111,18 @@ function buildFeeIssueRecord(params: {
   nowISO: string;
 }): { id: string; data: Omit<FeeRecord, "id"> } | null {
   const { config, student, issueDate, nowISO } = params;
+  const excluded: string[] = student.excludedFeeConfigIds || [];
+  if (excluded.includes(config.id)) return null;
+
   const classId = student.currentClass || "unassigned";
-  const amount = Number(config.classFees?.[classId] || 0);
+  const optionalAmount =
+    config.isOptional && student.optionalFeeAmounts?.[config.id] != null
+      ? Number(student.optionalFeeAmounts[config.id]) || 0
+      : null;
+  const amount =
+    optionalAmount != null
+      ? optionalAmount
+      : Number(config.classFees?.[classId] || 0);
   if (amount <= 0) return null;
 
   const periodKey = getIssuePeriodKey(config.cycle, issueDate);
@@ -447,7 +457,6 @@ export const feeService = {
     const configs = await this.getAllConfigs();
     const config = configs.find((c) => c.id === configId);
     if (!config) throw new Error("Fee config not found");
-    if (config.isOptional) throw new Error("Optional fees are set per student");
 
     const periods = listIssuePeriodDates(config.cycle, throughDate);
     return this.issueFeesForConfigPeriods(configId, periods);
@@ -461,7 +470,6 @@ export const feeService = {
     ]);
     const config = configs.find((c) => c.id === configId);
     if (!config) throw new Error("Fee config not found");
-    if (config.isOptional) throw new Error("Optional fees are set per student");
 
     const students = getArrFromObj(studentsData || {}) as any[];
     const issuedIds = new Set(
@@ -477,6 +485,14 @@ export const feeService = {
       for (const student of students) {
         if (!studentEligibleForPeriod(student, issueDate, config.cycle)) {
           continue;
+        }
+        // Optional fees are only issued when explicitly assigned to the student.
+        if (config.isOptional) {
+          const ids: string[] = student.optionalFeeIds || [];
+          const amounts = student.optionalFeeAmounts || {};
+          if (!ids.includes(config.id) && amounts[config.id] == null) {
+            continue;
+          }
         }
         const built = buildFeeIssueRecord({
           config,
@@ -507,6 +523,122 @@ export const feeService = {
       skipped: seen.size - toIssue.length,
       periods: periodDates.length,
     };
+  },
+
+  async deleteUnpaidFeeRecordsForConfig(studentId: string, feeConfigId: string) {
+    const issued = await this.getFeesByStudent(studentId);
+    const removable = issued.filter((fee) => {
+      if (fee.feeConfigId !== feeConfigId) return false;
+      const paid = Number(fee.paidAmount) || 0;
+      return paid <= 0 && fee.status !== "paid" && fee.status !== "partial";
+    });
+
+    await Promise.all(
+      removable.map((fee) =>
+        mutate({
+          action: "delete",
+          path: `feeIssued/${fee.id}`,
+          actionBy: "admin",
+        }),
+      ),
+    );
+
+    return { deleted: removable.length };
+  },
+
+  /**
+   * Include/exclude admission, uniform, transport (and similar) fee configs
+   * for one student, then reconcile issued bills so admin/accounts/student
+   * views stay in sync.
+   */
+  async applyStudentSelectableFees(params: {
+    studentId: string;
+    /** feeConfigId -> included */
+    inclusions: Record<string, boolean>;
+    /** Optional overrides when including optional fees */
+    amounts?: Record<string, number>;
+  }) {
+    const { studentId, inclusions, amounts = {} } = params;
+    const [studentRaw, configs] = await Promise.all([
+      mutate({ action: "get", path: `students/${studentId}` }),
+      this.getAllConfigs(),
+    ]);
+    if (!studentRaw) throw new Error("Student not found");
+
+    const student = {
+      ...(studentRaw as Student),
+      id: studentId,
+    } as Student;
+
+    const excluded = new Set(student.excludedFeeConfigIds || []);
+    const optionalIds = new Set(student.optionalFeeIds || []);
+    const optionalAmounts: Record<string, number> = {
+      ...(student.optionalFeeAmounts || {}),
+    };
+
+    const configById = new Map(configs.map((c) => [c.id, c]));
+    const toInclude: string[] = [];
+    const toExclude: string[] = [];
+
+    for (const [configId, include] of Object.entries(inclusions)) {
+      const config = configById.get(configId);
+      if (!config) continue;
+
+      if (include) {
+        excluded.delete(configId);
+        toInclude.push(configId);
+        if (config.isOptional) {
+          optionalIds.add(configId);
+          const classAmount = Number(
+            config.classFees?.[student.currentClass || "unassigned"] || 0,
+          );
+          const nextAmount =
+            amounts[configId] != null
+              ? Number(amounts[configId]) || 0
+              : optionalAmounts[configId] != null
+                ? Number(optionalAmounts[configId]) || 0
+                : classAmount;
+          optionalAmounts[configId] = nextAmount;
+        }
+      } else {
+        excluded.add(configId);
+        optionalIds.delete(configId);
+        delete optionalAmounts[configId];
+        toExclude.push(configId);
+      }
+    }
+
+    await mutate({
+      action: "update",
+      path: `students/${studentId}`,
+      data: {
+        excludedFeeConfigIds: [...excluded],
+        optionalFeeIds: [...optionalIds],
+        optionalFeeAmounts: optionalAmounts,
+        updatedAt: new Date().toISOString(),
+      },
+      actionBy: "admin",
+    });
+
+    let removed = 0;
+    for (const configId of toExclude) {
+      const del = await this.deleteUnpaidFeeRecordsForConfig(
+        studentId,
+        configId,
+      );
+      removed += del.deleted;
+    }
+
+    let issued = 0;
+    for (const configId of toInclude) {
+      const result = await this.issueFeesForConfigThroughDate(
+        configId,
+        new Date(),
+      );
+      issued += result.created;
+    }
+
+    return { issued, removed };
   },
 
   /** Catch up all mandatory fees for the current academic year through today. */

@@ -81,6 +81,8 @@ export interface Student extends BaseEntity {
   siblingIds?: string[];
   optionalFeeIds?: string[]; // IDs of optional fees assigned to this student
   optionalFeeAmounts?: Record<string, number>; // Fee ID -> Amount
+  /** Fee config IDs this student should not be billed for (admission/uniform/transport etc.). */
+  excludedFeeConfigIds?: string[];
   pen?: string;
   socialCategory?: string;
   socialCategoryCode?: number;
@@ -115,6 +117,7 @@ export interface StudentInput {
   siblingIds?: string[];
   optionalFeeIds?: string[];
   optionalFeeAmounts?: Record<string, number>;
+  excludedFeeConfigIds?: string[];
   /** Null clears an existing PEN on write paths that reuse this shape. */
   pen?: string | null;
   socialCategory?: string;
@@ -149,6 +152,7 @@ export interface StudentUpdateInput {
   siblingIds?: string[];
   optionalFeeIds?: string[];
   optionalFeeAmounts?: Record<string, number>;
+  excludedFeeConfigIds?: string[];
   pen?: string | null;
   socialCategory?: string;
   socialCategoryCode?: number;
