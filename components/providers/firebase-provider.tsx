@@ -120,7 +120,7 @@ export function FirebaseProvider({ children }: FirebaseProviderProps) {
                 console.log("FCM token obtained and saved");
               }
 
-              unsubscribeForeground = onForegroundMessage((payload) => {
+              unsubscribeForeground = await onForegroundMessage((payload) => {
                 const notificationTitle =
                   payload.notification?.title || "Notification";
                 const notificationBody = payload.notification?.body || "";
@@ -165,6 +165,9 @@ export function FirebaseProvider({ children }: FirebaseProviderProps) {
                   { duration: 8000, position: "top-right" },
                 );
               });
+              if (!unsubscribeForeground) {
+                unsubscribeForeground = null;
+              }
             } catch (error) {
               console.error("Failed to initialize messaging:", error);
             }

@@ -1,30 +1,61 @@
 "use client";
 
-import { getMessaging, getToken, onMessage, type MessagePayload } from "firebase/messaging";
+import {
+  getMessaging,
+  getToken,
+  isSupported,
+  onMessage,
+  type MessagePayload,
+  type Messaging,
+} from "firebase/messaging";
 import { getApp } from "firebase/app";
-import { firebaseConfig, firebaseVapidConfig } from "@/lib/env";
+import { firebaseVapidConfig } from "@/lib/env";
 
-let messaging: ReturnType<typeof getMessaging> | null = null;
+let messaging: Messaging | null = null;
+let messagingInitPromise: Promise<Messaging | null> | null = null;
+
+function canUseMessagingApis(): boolean {
+  if (typeof window === "undefined") return false;
+  if (!("Notification" in window)) return false;
+  if (!("serviceWorker" in navigator)) return false;
+  // Firebase Messaging needs a secure context (https or localhost).
+  if (!window.isSecureContext) return false;
+  return true;
+}
 
 /**
- * Initialize Firebase Messaging
+ * Initialize Firebase Messaging only when the browser supports it.
+ * Avoids crashes like `addEventListener` on undefined in unsupported
+ * environments (some Safari / insecure contexts / missing SW).
  */
-export function getFirebaseMessaging() {
-  if (typeof window === "undefined") {
+export async function getFirebaseMessaging(): Promise<Messaging | null> {
+  if (!canUseMessagingApis()) {
     return null;
   }
 
-  if (!messaging) {
-    try {
-      const app = getApp();
-      messaging = getMessaging(app);
-    } catch (error) {
-      console.error("Error initializing Firebase Messaging:", error);
-      return null;
-    }
+  if (messaging) {
+    return messaging;
   }
 
-  return messaging;
+  if (!messagingInitPromise) {
+    messagingInitPromise = (async () => {
+      try {
+        const supported = await isSupported();
+        if (!supported) {
+          return null;
+        }
+        const app = getApp();
+        messaging = getMessaging(app);
+        return messaging;
+      } catch (error) {
+        console.warn("Firebase Messaging unavailable:", error);
+        messaging = null;
+        return null;
+      }
+    })();
+  }
+
+  return messagingInitPromise;
 }
 
 /**
@@ -51,20 +82,19 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
  * Get FCM token for the current user/device
  */
 export async function getFCMToken(): Promise<string | null> {
-  if (typeof window === "undefined") {
+  if (!canUseMessagingApis()) {
     return null;
   }
 
-  const messagingInstance = getFirebaseMessaging();
+  const messagingInstance = await getFirebaseMessaging();
   if (!messagingInstance) {
-    console.error("Firebase Messaging not initialized");
     return null;
   }
 
   try {
     const vapidKey = firebaseVapidConfig.publicKey;
     if (!vapidKey) {
-      console.error("VAPID key not configured");
+      console.warn("VAPID key not configured; skipping FCM token");
       return null;
     }
 
@@ -74,7 +104,7 @@ export async function getFCMToken(): Promise<string | null> {
 
     return token;
   } catch (error) {
-    console.error("Error getting FCM token:", error);
+    console.warn("Error getting FCM token:", error);
     return null;
   }
 }
@@ -85,7 +115,7 @@ export async function getFCMToken(): Promise<string | null> {
 export async function saveNotificationToken(
   userId: string,
   token: string,
-  deviceInfo?: string
+  deviceInfo?: string,
 ): Promise<boolean> {
   try {
     const response = await fetch("/api/notifications/token", {
@@ -102,7 +132,7 @@ export async function saveNotificationToken(
 
     return response.ok;
   } catch (error) {
-    console.error("Error saving notification token:", error);
+    console.warn("Error saving notification token:", error);
     return false;
   }
 }
@@ -111,46 +141,38 @@ export async function saveNotificationToken(
  * Initialize messaging and get token
  * Call this when user logs in
  */
-export async function initializeMessaging(userId: string): Promise<string | null> {
-  if (typeof window === "undefined") {
+export async function initializeMessaging(
+  userId: string,
+): Promise<string | null> {
+  if (!canUseMessagingApis()) {
     return null;
   }
 
-  // Request permission
   const permission = await requestNotificationPermission();
   if (permission !== "granted") {
-    console.warn("Notification permission not granted:", permission);
     return null;
   }
 
-  // Get FCM token
   const token = await getFCMToken();
   if (!token) {
-    console.error("Failed to get FCM token");
     return null;
   }
 
-  // Save token to database
-  const saved = await saveNotificationToken(userId, token);
-  if (!saved) {
-    console.error("Failed to save notification token");
-    // Still return token even if save failed
-  }
-
+  await saveNotificationToken(userId, token);
   return token;
 }
 
 /**
  * Listen for foreground messages
  */
-export function onForegroundMessage(
-  callback: (payload: MessagePayload) => void
-): (() => void) | null {
-  if (typeof window === "undefined") {
+export async function onForegroundMessage(
+  callback: (payload: MessagePayload) => void,
+): Promise<(() => void) | null> {
+  if (!canUseMessagingApis()) {
     return null;
   }
 
-  const messagingInstance = getFirebaseMessaging();
+  const messagingInstance = await getFirebaseMessaging();
   if (!messagingInstance) {
     return null;
   }
@@ -158,7 +180,7 @@ export function onForegroundMessage(
   try {
     return onMessage(messagingInstance, callback);
   } catch (error) {
-    console.error("Error setting up foreground message listener:", error);
+    console.warn("Error setting up foreground message listener:", error);
     return null;
   }
 }
@@ -167,20 +189,20 @@ export function onForegroundMessage(
  * Register service worker for push notifications
  */
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+  if (!canUseMessagingApis()) {
     return null;
   }
 
   try {
-    const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js", {
-      scope: "/",
-    });
-
-    console.log("Service Worker registered:", registration);
+    const registration = await navigator.serviceWorker.register(
+      "/firebase-messaging-sw.js",
+      {
+        scope: "/",
+      },
+    );
     return registration;
   } catch (error) {
-    console.error("Error registering service worker:", error);
+    console.warn("Error registering service worker:", error);
     return null;
   }
 }
-
