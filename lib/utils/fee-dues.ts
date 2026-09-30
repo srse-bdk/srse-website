@@ -1,6 +1,10 @@
 import { addMonths, endOfMonth, startOfMonth } from "date-fns";
 import type { FeeConfiguration, FeeFrequency, FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
+import {
+  isTuitionFeeConfig,
+  studentHasReadmissionIncluded,
+} from "@/lib/utils/student-selectable-fees";
 
 function normalize(str: string) {
   return (str || "").trim().toLowerCase();
@@ -41,6 +45,7 @@ function getOccurrencesInRange(
   anchorDate: Date,
   rangeStart: Date,
   rangeEnd: Date,
+  options?: { skipApril?: boolean },
 ) {
   if (cycle === "one-time") {
     const anchor = startOfMonth(anchorDate);
@@ -53,7 +58,11 @@ function getOccurrencesInRange(
   let count = 0;
   let cursor = startOfMonth(anchorDate);
   while (cursor <= rangeEnd) {
-    if (cursor >= rangeStart) count += 1;
+    if (cursor >= rangeStart) {
+      if (!(options?.skipApril && cursor.getMonth() === 3)) {
+        count += 1;
+      }
+    }
     cursor = addMonths(cursor, step);
   }
   return count;
@@ -86,9 +95,21 @@ export function calculateStudentDueFromStructure(params: {
       !(student.excludedFeeConfigIds || []).includes(cfg.id),
   );
 
+  const hasReadmission = studentHasReadmissionIncluded(student, feeConfigs);
+
   const expectedMandatoryDue = mandatoryConfigs.reduce((sum, cfg) => {
     const amount = Number(cfg.classFees[classKey]) || 0;
-    const occurrences = getOccurrencesInRange(cfg.cycle, anchorDate, rangeStart, rangeEnd);
+    const skipApril =
+      hasReadmission &&
+      cfg.cycle === "monthly" &&
+      isTuitionFeeConfig(cfg);
+    const occurrences = getOccurrencesInRange(
+      cfg.cycle,
+      anchorDate,
+      rangeStart,
+      rangeEnd,
+      { skipApril },
+    );
     return sum + amount * occurrences;
   }, 0);
 

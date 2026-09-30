@@ -127,6 +127,42 @@ export function resolveSelectableFeeAmount(
   return Number(config.classFees?.[classKey] || 0);
 }
 
+export function isTuitionFeeConfig(config: FeeConfiguration): boolean {
+  const name = normalize(config.name);
+  return name.includes("tuition") || name.includes("tution");
+}
+
+/** Re-admission covers April tuition for the academic year. */
+export function isAprilMonth(date: Date): boolean {
+  return date.getMonth() === 3; // 0-indexed: April
+}
+
+export function studentHasReadmissionIncluded(
+  student: Student,
+  configs: FeeConfiguration[],
+): boolean {
+  const readmissionCfg = findSelectableFeeConfig(configs, "readmission");
+  if (!readmissionCfg) return false;
+  return isSelectableFeeIncluded(student, readmissionCfg);
+}
+
+/**
+ * Skip April monthly tuition when the student has re-admission
+ * (re-admission fee already includes April tuition).
+ */
+export function shouldSkipTuitionPeriodForReadmission(params: {
+  student: Student;
+  config: FeeConfiguration;
+  issueDate: Date;
+  configs: FeeConfiguration[];
+}): boolean {
+  const { student, config, issueDate, configs } = params;
+  if (config.cycle !== "monthly") return false;
+  if (!isTuitionFeeConfig(config)) return false;
+  if (!isAprilMonth(issueDate)) return false;
+  return studentHasReadmissionIncluded(student, configs);
+}
+
 /**
  * If both admission and re-admission would be included, keep `preferred`
  * (default admission) and force the other off.

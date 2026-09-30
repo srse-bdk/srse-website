@@ -14,6 +14,8 @@ import {
   configMatchesSelectableKind,
   findSelectableFeeConfig,
   isSelectableFeeIncluded,
+  isTuitionFeeConfig,
+  shouldSkipTuitionPeriodForReadmission,
 } from "@/lib/utils/student-selectable-fees";
 
 interface RecordFeePaymentInput {
@@ -133,9 +135,12 @@ function buildFeeIssueRecord(params: {
   const periodKey = getIssuePeriodKey(config.cycle, issueDate);
   const recordId = `${slug(config.id)}_${slug(student.id)}_${slug(periodKey)}`;
   const dueDate = format(endOfMonth(issueDate), "yyyy-MM-dd");
+  const isReadmission = configMatchesSelectableKind(config, "readmission");
   const title =
     config.cycle === "one-time"
-      ? config.name
+      ? isReadmission
+        ? `${config.name} (includes April tuition)`
+        : config.name
       : config.cycle === "annually"
         ? `${format(issueDate, "yyyy")} ${config.name}`
         : config.cycle === "quarterly"
@@ -158,6 +163,9 @@ function buildFeeIssueRecord(params: {
       fineAmount: 0,
       dueDate,
       status: "pending",
+      remarks: isReadmission
+        ? "Includes April month tuition. Monthly tuition applies from May onward."
+        : undefined,
       createdAt: nowISO,
       updatedAt: nowISO,
     },
@@ -484,7 +492,14 @@ export const feeService = {
     );
     const nowISO = new Date().toISOString();
     const toIssue: Array<{ id: string; data: Omit<FeeRecord, "id"> }> = [];
+    const toDeleteIds: string[] = [];
     const seen = new Set<string>();
+    const issuedById = new Map(
+      ((getArrFromObj(issuedRaw || {}) as unknown) as FeeRecord[]).map((f) => [
+        f.id,
+        f,
+      ]),
+    );
 
     for (const issueDate of periodDates) {
       for (const student of students) {
@@ -499,6 +514,30 @@ export const feeService = {
             continue;
           }
         }
+        // Re-admission includes April tuition — do not also bill April tuition.
+        if (
+          shouldSkipTuitionPeriodForReadmission({
+            student,
+            config,
+            issueDate,
+            configs,
+          })
+        ) {
+          const periodKey = getIssuePeriodKey(config.cycle, issueDate);
+          const recordId = `${slug(config.id)}_${slug(student.id)}_${slug(periodKey)}`;
+          const existing = issuedById.get(recordId);
+          const paid = Number(existing?.paidAmount) || 0;
+          if (
+            existing &&
+            paid <= 0 &&
+            existing.status !== "paid" &&
+            existing.status !== "partial"
+          ) {
+            toDeleteIds.push(recordId);
+            issuedIds.delete(recordId);
+          }
+          continue;
+        }
         const built = buildFeeIssueRecord({
           config,
           student,
@@ -512,8 +551,15 @@ export const feeService = {
       }
     }
 
-    await Promise.all(
-      toIssue.map((item) =>
+    await Promise.all([
+      ...toDeleteIds.map((id) =>
+        mutate({
+          action: "delete",
+          path: `feeIssued/${id}`,
+          actionBy: "admin",
+        }),
+      ),
+      ...toIssue.map((item) =>
         mutate({
           action: "update",
           path: `feeIssued/${item.id}`,
@@ -521,10 +567,11 @@ export const feeService = {
           actionBy: "admin",
         }),
       ),
-    );
+    ]);
 
     return {
       created: toIssue.length,
+      deleted: toDeleteIds.length,
       skipped: seen.size - toIssue.length,
       periods: periodDates.length,
     };
@@ -536,6 +583,50 @@ export const feeService = {
       if (fee.feeConfigId !== feeConfigId) return false;
       const paid = Number(fee.paidAmount) || 0;
       return paid <= 0 && fee.status !== "paid" && fee.status !== "partial";
+    });
+
+    await Promise.all(
+      removable.map((fee) =>
+        mutate({
+          action: "delete",
+          path: `feeIssued/${fee.id}`,
+          actionBy: "admin",
+        }),
+      ),
+    );
+
+    return { deleted: removable.length };
+  },
+
+  /** Remove unpaid April tuition bills (covered by re-admission). */
+  async deleteUnpaidAprilTuitionForStudent(
+    studentId: string,
+    configs: FeeConfiguration[],
+    asOf = new Date(),
+  ) {
+    const academicYear = getAcademicYearForDate(asOf);
+    const { start: ayStart } = getAcademicYearRange(academicYear);
+    const aprilKey = getIssuePeriodKey("monthly", ayStart);
+    const tuitionConfigs = configs.filter(isTuitionFeeConfig);
+    if (tuitionConfigs.length === 0) return { deleted: 0 };
+
+    const tuitionIds = new Set(tuitionConfigs.map((c) => c.id));
+    const issued = await this.getFeesByStudent(studentId);
+    const removable = issued.filter((fee) => {
+      if (!fee.feeConfigId || !tuitionIds.has(fee.feeConfigId)) return false;
+      const paid = Number(fee.paidAmount) || 0;
+      if (paid > 0 || fee.status === "paid" || fee.status === "partial") {
+        return false;
+      }
+      if (fee.issuePeriodKey === aprilKey) return true;
+      // Fallback: due date in April of AY start year
+      if (fee.dueDate) {
+        const due = new Date(fee.dueDate);
+        return (
+          due.getFullYear() === ayStart.getFullYear() && due.getMonth() === 3
+        );
+      }
+      return false;
     });
 
     await Promise.all(
@@ -687,6 +778,19 @@ export const feeService = {
       removed += del.deleted;
     }
 
+    // Re-admission includes April tuition — drop unpaid April tuition bills.
+    const includedReadmission = includeIds.some((id) => {
+      const cfg = configById.get(id);
+      return cfg ? configMatchesSelectableKind(cfg, "readmission") : false;
+    });
+    if (includedReadmission) {
+      const aprilDel = await this.deleteUnpaidAprilTuitionForStudent(
+        studentId,
+        configs,
+      );
+      removed += aprilDel.deleted;
+    }
+
     let issued = 0;
     for (const configId of includeIds) {
       const result = await this.issueFeesForConfigThroughDate(
@@ -694,6 +798,18 @@ export const feeService = {
         new Date(),
       );
       issued += result.created;
+    }
+
+    // After re-admission, ensure May+ tuition exists (April skipped by issue gate).
+    if (includedReadmission) {
+      for (const tuitionCfg of configs.filter(isTuitionFeeConfig)) {
+        if (tuitionCfg.isOptional) continue;
+        const result = await this.issueFeesForConfigThroughDate(
+          tuitionCfg.id,
+          new Date(),
+        );
+        issued += result.created;
+      }
     }
 
     return { issued, removed };

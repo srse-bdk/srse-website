@@ -151,8 +151,8 @@ export function ManageStudentExtraFeesDialog({
           <DialogDescription>
             Include or exclude these fees for{" "}
             <strong>{student?.fullName}</strong>. Admission and re-admission are
-            mutually exclusive — new admissions get admission only; existing
-            students get re-admission only.
+            mutually exclusive. Re-admission (April) includes that month&apos;s
+            tuition — monthly tuition is billed from May onward.
           </DialogDescription>
         </DialogHeader>
 
@@ -214,7 +214,9 @@ export function ManageStudentExtraFeesDialog({
                     {(row.kind === "admission" ||
                       row.kind === "readmission") && (
                       <p className="text-[11px] text-muted-foreground mt-1">
-                        Selecting this clears the other admission type.
+                        {row.kind === "readmission"
+                          ? "Includes April tuition. Tuition bills start from May."
+                          : "Selecting this clears re-admission (and vice versa)."}
                       </p>
                     )}
                   </div>
