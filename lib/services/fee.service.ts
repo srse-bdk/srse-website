@@ -10,6 +10,11 @@ import { getArrFromObj } from "@ashirbad/js-core";
 import { mutate } from "@atechhub/firebase";
 import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
 import { financialService } from "./financial.service";
+import {
+  configMatchesSelectableKind,
+  findSelectableFeeConfig,
+  isSelectableFeeIncluded,
+} from "@/lib/utils/student-selectable-fees";
 
 interface RecordFeePaymentInput {
   feeId: string;
@@ -577,10 +582,36 @@ export const feeService = {
     };
 
     const configById = new Map(configs.map((c) => [c.id, c]));
+
+    // Admission and re-admission are mutually exclusive.
+    const admissionCfg = findSelectableFeeConfig(configs, "admission");
+    const readmissionCfg = findSelectableFeeConfig(configs, "readmission");
+    const normalizedInclusions = { ...inclusions };
+    if (admissionCfg && readmissionCfg) {
+      const wantAdmission = normalizedInclusions[admissionCfg.id] === true;
+      const wantReadmission = normalizedInclusions[readmissionCfg.id] === true;
+      if (wantAdmission && wantReadmission) {
+        // Prefer whichever was already included; default to admission.
+        const alreadyReadmission = isSelectableFeeIncluded(
+          student,
+          readmissionCfg,
+        );
+        const alreadyAdmission = isSelectableFeeIncluded(
+          student,
+          admissionCfg,
+        );
+        if (alreadyReadmission && !alreadyAdmission) {
+          normalizedInclusions[admissionCfg.id] = false;
+        } else {
+          normalizedInclusions[readmissionCfg.id] = false;
+        }
+      }
+    }
+
     const toInclude: string[] = [];
     const toExclude: string[] = [];
 
-    for (const [configId, include] of Object.entries(inclusions)) {
+    for (const [configId, include] of Object.entries(normalizedInclusions)) {
       const config = configById.get(configId);
       if (!config) continue;
 
@@ -599,6 +630,28 @@ export const feeService = {
                 ? Number(optionalAmounts[configId]) || 0
                 : classAmount;
           optionalAmounts[configId] = nextAmount;
+        }
+
+        // Including admission/readmission also excludes the opposite config
+        // even if it wasn't in the payload.
+        if (configMatchesSelectableKind(config, "admission") && readmissionCfg) {
+          if (!toExclude.includes(readmissionCfg.id)) {
+            excluded.add(readmissionCfg.id);
+            optionalIds.delete(readmissionCfg.id);
+            delete optionalAmounts[readmissionCfg.id];
+            toExclude.push(readmissionCfg.id);
+          }
+        }
+        if (
+          configMatchesSelectableKind(config, "readmission") &&
+          admissionCfg
+        ) {
+          if (!toExclude.includes(admissionCfg.id)) {
+            excluded.add(admissionCfg.id);
+            optionalIds.delete(admissionCfg.id);
+            delete optionalAmounts[admissionCfg.id];
+            toExclude.push(admissionCfg.id);
+          }
         }
       } else {
         excluded.add(configId);
@@ -620,8 +673,13 @@ export const feeService = {
       actionBy: "admin",
     });
 
+    const excludeIds = [...new Set(toExclude)];
+    const includeIds = [...new Set(toInclude)].filter(
+      (id) => !excludeIds.includes(id),
+    );
+
     let removed = 0;
-    for (const configId of toExclude) {
+    for (const configId of excludeIds) {
       const del = await this.deleteUnpaidFeeRecordsForConfig(
         studentId,
         configId,
@@ -630,7 +688,7 @@ export const feeService = {
     }
 
     let issued = 0;
-    for (const configId of toInclude) {
+    for (const configId of includeIds) {
       const result = await this.issueFeesForConfigThroughDate(
         configId,
         new Date(),

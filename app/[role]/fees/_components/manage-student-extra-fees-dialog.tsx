@@ -23,7 +23,9 @@ import { toast } from "sonner";
 import {
   SELECTABLE_FEE_KINDS,
   SELECTABLE_FEE_LABELS,
+  enforceAdmissionReadmissionExclusivity,
   findSelectableFeeConfig,
+  getExclusiveOppositeKinds,
   isSelectableFeeIncluded,
   resolveSelectableFeeAmount,
   type SelectableFeeKind,
@@ -58,17 +60,25 @@ export function ManageStudentExtraFeesDialog({
 
   useEffect(() => {
     if (!open || !student) return;
+    const initial = SELECTABLE_FEE_KINDS.map((kind) => {
+      const config = findSelectableFeeConfig(configs, kind);
+      const included = config
+        ? isSelectableFeeIncluded(student, config)
+        : false;
+      const amount = config ? resolveSelectableFeeAmount(student, config) : 0;
+      return { kind, config, included, amount };
+    });
+
+    // Prefer whichever side is already on; default to admission if both.
+    const preferReadmission =
+      initial.some((r) => r.kind === "readmission" && r.included) &&
+      !initial.some((r) => r.kind === "admission" && r.included);
+
     setRows(
-      SELECTABLE_FEE_KINDS.map((kind) => {
-        const config = findSelectableFeeConfig(configs, kind);
-        const included = config
-          ? isSelectableFeeIncluded(student, config)
-          : false;
-        const amount = config
-          ? resolveSelectableFeeAmount(student, config)
-          : 0;
-        return { kind, config, included, amount };
-      }),
+      enforceAdmissionReadmissionExclusivity(
+        initial,
+        preferReadmission ? "readmission" : "admission",
+      ),
     );
   }, [open, student, configs]);
 
@@ -77,14 +87,30 @@ export function ManageStudentExtraFeesDialog({
     [rows],
   );
 
+  const setIncluded = (kind: SelectableFeeKind, included: boolean) => {
+    setRows((prev) => {
+      let next = prev.map((r) =>
+        r.kind === kind ? { ...r, included } : r,
+      );
+      if (included) {
+        const opposites = getExclusiveOppositeKinds(kind);
+        next = next.map((r) =>
+          opposites.includes(r.kind) ? { ...r, included: false } : r,
+        );
+      }
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     if (!student) return;
     setSaving(true);
     try {
+      const safeRows = enforceAdmissionReadmissionExclusivity(rows);
       const inclusions: Record<string, boolean> = {};
       const amounts: Record<string, number> = {};
 
-      for (const row of rows) {
+      for (const row of safeRows) {
         if (!row.config) continue;
         inclusions[row.config.id] = row.included;
         if (row.included) {
@@ -124,8 +150,9 @@ export function ManageStudentExtraFeesDialog({
           <DialogTitle>Admission / Uniform / Transport</DialogTitle>
           <DialogDescription>
             Include or exclude these fees for{" "}
-            <strong>{student?.fullName}</strong>. Changes update issued bills
-            for admin, accounts, and student login.
+            <strong>{student?.fullName}</strong>. Admission and re-admission are
+            mutually exclusive — new admissions get admission only; existing
+            students get re-admission only.
           </DialogDescription>
         </DialogHeader>
 
@@ -137,8 +164,8 @@ export function ManageStudentExtraFeesDialog({
           <div className="space-y-3">
             {!hasAnyConfig && (
               <p className="text-sm text-muted-foreground rounded-lg border p-3">
-                No fee configurations named Admission, Uniform, or Transport
-                were found. Add them under Fee Structure first.
+                No matching fee configurations found. Add Admission,
+                Re-admission, Uniform, or Transport under Fee Structure first.
               </p>
             )}
             {rows.map((row) => (
@@ -154,13 +181,7 @@ export function ManageStudentExtraFeesDialog({
                     checked={row.included}
                     disabled={!row.config}
                     onCheckedChange={(checked) =>
-                      setRows((prev) =>
-                        prev.map((r) =>
-                          r.kind === row.kind
-                            ? { ...r, included: Boolean(checked) }
-                            : r,
-                        ),
-                      )
+                      setIncluded(row.kind, Boolean(checked))
                     }
                     className="mt-1"
                   />
@@ -188,6 +209,12 @@ export function ManageStudentExtraFeesDialog({
                     ) : (
                       <p className="text-xs text-amber-700 mt-1">
                         No matching fee config in structure
+                      </p>
+                    )}
+                    {(row.kind === "admission" ||
+                      row.kind === "readmission") && (
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Selecting this clears the other admission type.
                       </p>
                     )}
                   </div>
