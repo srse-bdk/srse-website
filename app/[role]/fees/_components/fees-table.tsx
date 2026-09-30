@@ -37,8 +37,8 @@ import type { FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
 import { formatCurrency } from "@/lib/utils";
 import {
+    getAcademicYearForDate,
     getAcademicYearRange,
-    getMonthlyRange,
 } from "@/lib/utils/fee-dues";
 import {
     CreditCard,
@@ -49,7 +49,7 @@ import {
     Settings2,
     Wallet,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CollectFeeDialog } from "./collect-fee-dialog";
 import { ManageStudentExtraFeesDialog } from "./manage-student-extra-fees-dialog";
 import { ParentPayFeeDialog } from "./parent-pay-fee-dialog";
@@ -85,17 +85,26 @@ export function FeesTable({
   const canManageExtraFees =
     user?.role === "admin" || user?.role === "accounts";
 
-  const monthRange = getMonthlyRange(selectedMonth);
-  const ayRange = getAcademicYearRange(selectedAcademicYear);
-  const activeRange = viewMode === "monthly" ? monthRange : ayRange;
+  // Student Fee Details always shows academic-year totals (not a single month),
+  // so Total / Paid / Pending are not misleadingly small.
+  const academicYear =
+    viewMode === "yearly"
+      ? selectedAcademicYear
+      : getAcademicYearForDate(selectedMonth);
+  const ayRange = useMemo(
+    () => getAcademicYearRange(academicYear),
+    [academicYear],
+  );
 
-  // Aggregate stats per student
+  // Aggregate stats per student across the full academic year
   const studentFeeMap = students.map((student) => {
     const studentFees = fees.filter((f) => {
-      const matchesCategory = selectedCategory === "all" || f.category === selectedCategory;
+      const matchesCategory =
+        selectedCategory === "all" || f.category === selectedCategory;
       if (f.studentId !== student.id || !matchesCategory) return false;
+      if (!f.dueDate) return false;
       const dueDate = new Date(f.dueDate);
-      return dueDate >= activeRange.start && dueDate <= activeRange.end;
+      return dueDate >= ayRange.start && dueDate <= ayRange.end;
     });
 
     const filteredDue = studentFees.reduce(
@@ -291,7 +300,8 @@ export function FeesTable({
             Student Fee Details
           </CardTitle>
           <CardDescription>
-            List of all students and their payment status.
+            Academic year {academicYear} totals (all issued fees for the
+            session). Monthly/Yearly above only filters collection stats.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -300,9 +310,9 @@ export function FeesTable({
               <TableRow>
                 <TableHead>Student Info</TableHead>
                 <TableHead>Guardian Details</TableHead>
-                <TableHead>Total Fee</TableHead>
-                <TableHead>Paid</TableHead>
-                <TableHead>Pending Amount</TableHead>
+                <TableHead>Total Fee (AY)</TableHead>
+                <TableHead>Paid (AY)</TableHead>
+                <TableHead>Pending (AY)</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
