@@ -132,6 +132,47 @@ export function isTuitionFeeConfig(config: FeeConfiguration): boolean {
   return name.includes("tuition") || name.includes("tution");
 }
 
+function isBooksOrCopiesName(name: string) {
+  const n = normalize(name);
+  if (n.includes("books") && (n.includes("cop") || n.includes("copy"))) {
+    return true;
+  }
+  if (
+    n.includes("books & copies") ||
+    n.includes("books and copies") ||
+    n.includes("book & copy")
+  ) {
+    return true;
+  }
+  // Standalone books / copies fee names
+  if (n === "books" || n === "book" || n === "copies" || n === "copy") {
+    return true;
+  }
+  if (n.startsWith("books ") || n.endsWith(" books") || n.includes(" books ")) {
+    return true;
+  }
+  if (
+    n.startsWith("copies ") ||
+    n.endsWith(" copies") ||
+    n.includes(" copies ")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Fees billed once per academic year (April), regardless of configured cycle.
+ * Includes admission, re-admission, uniform, books & copies.
+ */
+export function isAcademicYearFeeConfig(config: FeeConfiguration): boolean {
+  if (configMatchesSelectableKind(config, "admission")) return true;
+  if (configMatchesSelectableKind(config, "readmission")) return true;
+  if (configMatchesSelectableKind(config, "uniform")) return true;
+  if (isBooksOrCopiesName(config.name)) return true;
+  return false;
+}
+
 /** Re-admission covers April tuition for the academic year. */
 export function isAprilMonth(date: Date): boolean {
   return date.getMonth() === 3; // 0-indexed: April

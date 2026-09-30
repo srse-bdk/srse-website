@@ -151,8 +151,9 @@ export function ManageStudentExtraFeesDialog({
           <DialogDescription>
             Include or exclude these fees for{" "}
             <strong>{student?.fullName}</strong>. Admission and re-admission are
-            mutually exclusive. Re-admission (April) includes that month&apos;s
-            tuition — monthly tuition is billed from May onward.
+            mutually exclusive. Re-admission, uniform, and books/copies are
+            billed once per academic year (April). Re-admission includes April
+            tuition — monthly tuition starts from May.
           </DialogDescription>
         </DialogHeader>
 

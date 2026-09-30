@@ -14,6 +14,7 @@ import { financialService } from "./financial.service";
 import {
   configMatchesSelectableKind,
   findSelectableFeeConfig,
+  isAcademicYearFeeConfig,
   isSelectableFeeIncluded,
   isTuitionFeeConfig,
   shouldSkipTuitionPeriodForReadmission,
@@ -92,17 +93,24 @@ function getCycleStepMonths(cycle: FeeConfiguration["cycle"]) {
 function listIssuePeriodDates(
   cycle: FeeConfiguration["cycle"],
   throughDate: Date,
+  options?: { academicYearFee?: boolean },
 ): Date[] {
   const academicYear = getAcademicYearForDate(throughDate);
   const { start: ayStart } = getAcademicYearRange(academicYear);
   const end = startOfMonth(throughDate);
 
-  if (cycle === "one-time") {
-    return [ayStart];
+  // Once-per-AY fees (admission, readmission, uniform, books) → April only.
+  if (options?.academicYearFee || cycle === "one-time") {
+    return [startOfMonth(ayStart)];
   }
 
   const step = getCycleStepMonths(cycle);
   if (!step) return [];
+
+  // Annual cycle: one bill at AY start (April).
+  if (cycle === "annually") {
+    return startOfMonth(ayStart) <= end ? [startOfMonth(ayStart)] : [];
+  }
 
   const periods: Date[] = [];
   let cursor = startOfMonth(ayStart);
@@ -136,31 +144,35 @@ function buildFeeIssueRecord(params: {
 
   const isReadmission = configMatchesSelectableKind(config, "readmission");
   const isAdmission = configMatchesSelectableKind(config, "admission");
-  // Pin admission / re-admission to April of the academic year.
+  const isAyFee = isAcademicYearFeeConfig(config);
   const ayForIssue = getAcademicYearForDate(issueDate);
   const { start: ayStart } = getAcademicYearRange(ayForIssue);
-  const displayDate =
-    (isReadmission || isAdmission) && config.cycle === "one-time"
-      ? startOfMonth(ayStart)
-      : issueDate;
-  const periodKey =
-    isReadmission || isAdmission
-      ? `${ayForIssue.split("-")[0]}-04`
-      : getIssuePeriodKey(config.cycle, issueDate);
+  const ayLabel = ayForIssue; // e.g. 2026-2027
+
+  // AY fees always dated April of the session (stable id + display).
+  const displayDate = isAyFee ? startOfMonth(ayStart) : issueDate;
+  const periodKey = isAyFee
+    ? `${ayForIssue.split("-")[0]}-ay`
+    : getIssuePeriodKey(config.cycle, issueDate);
   const recordId = `${slug(config.id)}_${slug(student.id)}_${slug(periodKey)}`;
   const dueDate = format(endOfMonth(displayDate), "yyyy-MM-dd");
-  const title =
-    config.cycle === "one-time"
-      ? isReadmission
-        ? `April ${config.name} (includes April tuition)`
-        : isAdmission
-          ? `April ${config.name}`
-          : config.name
-      : config.cycle === "annually"
-        ? `${format(issueDate, "yyyy")} ${config.name}`
-        : config.cycle === "quarterly"
-          ? `Q${Math.floor(issueDate.getMonth() / 3) + 1} ${format(issueDate, "yyyy")} ${config.name}`
-          : `${format(issueDate, "MMMM")} ${config.name}`;
+
+  let title: string;
+  if (isAyFee) {
+    if (isReadmission) {
+      title = `${ayLabel} ${config.name} (includes April tuition)`;
+    } else {
+      title = `${ayLabel} ${config.name}`;
+    }
+  } else if (config.cycle === "annually") {
+    title = `${ayLabel} ${config.name}`;
+  } else if (config.cycle === "quarterly") {
+    title = `Q${Math.floor(issueDate.getMonth() / 3) + 1} ${format(issueDate, "yyyy")} ${config.name}`;
+  } else if (config.cycle === "one-time") {
+    title = config.name;
+  } else {
+    title = `${format(issueDate, "MMMM")} ${config.name}`;
+  }
 
   return {
     id: recordId,
@@ -180,7 +192,9 @@ function buildFeeIssueRecord(params: {
       status: "pending",
       remarks: isReadmission
         ? "Includes April month tuition. Monthly tuition applies from May onward."
-        : undefined,
+        : isAyFee
+          ? `Academic year ${ayLabel} fee (billed once in April).`
+          : undefined,
       createdAt: nowISO,
       updatedAt: nowISO,
     },
@@ -195,12 +209,11 @@ function studentEligibleForPeriod(
 ): boolean {
   if (student.status && student.status !== "active") return false;
 
-  // Re-admission / admission one-time fees are for the AY (April), not gated
-  // by late createdAt — only by include/exclude assignment.
-  if (configMatchesSelectableKind(config, "readmission")) {
-    return isSelectableFeeIncluded(student as Student, config);
-  }
-  if (configMatchesSelectableKind(config, "admission")) {
+  // Once-per-AY fees: not gated by late createdAt.
+  if (isAcademicYearFeeConfig(config)) {
+    if (configMatchesSelectableKind(config, "readmission")) {
+      return isSelectableFeeIncluded(student as Student, config);
+    }
     if ((student.excludedFeeConfigIds || []).includes(config.id)) return false;
     if (config.isOptional) {
       return isSelectableFeeIncluded(student as Student, config);
@@ -514,7 +527,9 @@ export const feeService = {
     const config = configs.find((c) => c.id === configId);
     if (!config) throw new Error("Fee config not found");
 
-    const periods = listIssuePeriodDates(config.cycle, throughDate);
+    const periods = listIssuePeriodDates(config.cycle, throughDate, {
+      academicYearFee: isAcademicYearFeeConfig(config),
+    });
     return this.issueFeesForConfigPeriods(configId, periods);
   },
 
@@ -527,24 +542,23 @@ export const feeService = {
     const config = configs.find((c) => c.id === configId);
     if (!config) throw new Error("Fee config not found");
 
+    // AY fees must only ever have one April bill — ignore monthly period lists.
+    const effectivePeriods = isAcademicYearFeeConfig(config)
+      ? listIssuePeriodDates(config.cycle, periodDates[0] || new Date(), {
+          academicYearFee: true,
+        })
+      : periodDates;
+
     const students = getArrFromObj(studentsData || {}) as any[];
-    const issuedIds = new Set(
-      ((getArrFromObj(issuedRaw || {}) as unknown) as FeeRecord[]).map(
-        (f) => f.id,
-      ),
-    );
+    const allIssued = (getArrFromObj(issuedRaw || {}) as unknown) as FeeRecord[];
+    const issuedIds = new Set(allIssued.map((f) => f.id));
     const nowISO = new Date().toISOString();
     const toIssue: Array<{ id: string; data: Omit<FeeRecord, "id"> }> = [];
     const toDeleteIds: string[] = [];
     const seen = new Set<string>();
-    const issuedById = new Map(
-      ((getArrFromObj(issuedRaw || {}) as unknown) as FeeRecord[]).map((f) => [
-        f.id,
-        f,
-      ]),
-    );
+    const issuedById = new Map(allIssued.map((f) => [f.id, f]));
 
-    for (const issueDate of periodDates) {
+    for (const issueDate of effectivePeriods) {
       for (const student of students) {
         if (!studentEligibleForPeriod(student, issueDate, config, configs)) {
           continue;
@@ -588,6 +602,25 @@ export const feeService = {
           nowISO,
         });
         if (!built) continue;
+
+        // Drop unpaid duplicates for the same student + config (e.g. old
+        // "June Readmission" after canonical "2026-2027 Readmission").
+        if (isAcademicYearFeeConfig(config)) {
+          for (const fee of allIssued) {
+            if (fee.studentId !== student.id) continue;
+            if (fee.feeConfigId !== config.id) continue;
+            if (fee.id === built.id) continue;
+            const paid = Number(fee.paidAmount) || 0;
+            if (paid > 0 || fee.status === "paid" || fee.status === "partial") {
+              continue;
+            }
+            if (!toDeleteIds.includes(fee.id)) {
+              toDeleteIds.push(fee.id);
+              issuedIds.delete(fee.id);
+            }
+          }
+        }
+
         if (issuedIds.has(built.id) || seen.has(built.id)) continue;
         seen.add(built.id);
         toIssue.push(built);
@@ -616,7 +649,7 @@ export const feeService = {
       created: toIssue.length,
       deleted: toDeleteIds.length,
       skipped: seen.size - toIssue.length,
-      periods: periodDates.length,
+      periods: effectivePeriods.length,
     };
   },
 
