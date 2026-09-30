@@ -57,9 +57,25 @@ function mapFeeCategoryToIncomeCategory(category: string): string {
   return "Miscellaneous Income";
 }
 
-function buildReceiptNumber(feeId: string) {
-  const now = new Date();
-  const datePart = format(now, "yyyyMMdd");
+function buildReceiptNumber(feeId: string, receiptDate?: string | Date) {
+  let datePart: string;
+  if (receiptDate instanceof Date) {
+    datePart = Number.isNaN(receiptDate.getTime())
+      ? format(new Date(), "yyyyMMdd")
+      : format(receiptDate, "yyyyMMdd");
+  } else if (typeof receiptDate === "string" && receiptDate.trim()) {
+    const ymd = receiptDate.trim().slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      datePart = ymd.replace(/-/g, "");
+    } else {
+      const parsed = new Date(receiptDate);
+      datePart = Number.isNaN(parsed.getTime())
+        ? format(new Date(), "yyyyMMdd")
+        : format(parsed, "yyyyMMdd");
+    }
+  } else {
+    datePart = format(new Date(), "yyyyMMdd");
+  }
   const shortId = (feeId || "NA").slice(-6).toUpperCase();
   const rand = Math.floor(100 + Math.random() * 900);
   return `RCPT-${datePart}-${shortId}-${rand}`;
@@ -132,13 +148,14 @@ function buildFeeIssueRecord(params: {
   if (excluded.includes(config.id)) return null;
 
   const classId = student.currentClass || "unassigned";
-  const optionalAmount =
-    config.isOptional && student.optionalFeeAmounts?.[config.id] != null
+  // Per-student override (e.g. uniform 1250) wins over structure class fee.
+  const overrideAmount =
+    student.optionalFeeAmounts?.[config.id] != null
       ? Number(student.optionalFeeAmounts[config.id]) || 0
       : null;
   const amount =
-    optionalAmount != null
-      ? optionalAmount
+    overrideAmount != null
+      ? overrideAmount
       : Number(config.classFees?.[classId] || 0);
   if (amount <= 0) return null;
 
@@ -339,7 +356,8 @@ export const feeService = {
     });
     const existingPayment = existingPaymentRaw as Omit<FeePayment, "id"> | null;
     const receiptNumber =
-      existingPayment?.receiptNumber || buildReceiptNumber(input.feeId);
+      existingPayment?.receiptNumber ||
+      buildReceiptNumber(input.feeId, paidOn);
 
     const studentRaw = await mutate({
       action: "get",
@@ -568,6 +586,12 @@ export const feeService = {
     const issuedIds = new Set(allIssued.map((f) => f.id));
     const nowISO = new Date().toISOString();
     const toIssue: Array<{ id: string; data: Omit<FeeRecord, "id"> }> = [];
+    const toUpdateAmount: Array<{
+      id: string;
+      amount: number;
+      title: string;
+      remarks?: string;
+    }> = [];
     const toDeleteIds: string[] = [];
     const seen = new Set<string>();
     const issuedById = new Map(allIssued.map((f) => [f.id, f]));
@@ -635,7 +659,30 @@ export const feeService = {
           }
         }
 
-        if (issuedIds.has(built.id) || seen.has(built.id)) continue;
+        if (issuedIds.has(built.id) || seen.has(built.id)) {
+          // Keep unpaid bills in sync when per-student / structure amount changes
+          // (e.g. uniform 600 → 1250) without creating duplicates.
+          const existing = issuedById.get(built.id);
+          if (existing) {
+            const paid = Number(existing.paidAmount) || 0;
+            const isSettled =
+              paid > 0 ||
+              existing.status === "paid" ||
+              existing.status === "partial";
+            if (
+              !isSettled &&
+              Number(existing.amount) !== Number(built.data.amount)
+            ) {
+              toUpdateAmount.push({
+                id: built.id,
+                amount: built.data.amount,
+                title: built.data.title,
+                remarks: built.data.remarks,
+              });
+            }
+          }
+          continue;
+        }
         seen.add(built.id);
         toIssue.push(built);
       }
@@ -657,10 +704,24 @@ export const feeService = {
           actionBy: "admin",
         }),
       ),
+      ...toUpdateAmount.map((item) =>
+        mutate({
+          action: "update",
+          path: `feeIssued/${item.id}`,
+          data: {
+            amount: item.amount,
+            title: item.title,
+            remarks: item.remarks,
+            updatedAt: nowISO,
+          },
+          actionBy: "admin",
+        }),
+      ),
     ]);
 
     return {
       created: toIssue.length,
+      updated: toUpdateAmount.length,
       deleted: toDeleteIds.length,
       skipped: seen.size - toIssue.length,
       periods: effectivePeriods.length,
@@ -801,15 +862,20 @@ export const feeService = {
         toInclude.push(configId);
         if (config.isOptional) {
           optionalIds.add(configId);
-          const classAmount = Number(
-            config.classFees?.[student.currentClass || "unassigned"] || 0,
-          );
-          const nextAmount =
-            amounts[configId] != null
-              ? Number(amounts[configId]) || 0
-              : optionalAmounts[configId] != null
-                ? Number(optionalAmounts[configId]) || 0
-                : classAmount;
+        }
+        // Persist per-student amount for selectable fees (uniform etc.) even
+        // when the structure fee is not marked optional — otherwise the dialog
+        // amount never sticks and unpaid bills keep the old class fee.
+        const classAmount = Number(
+          config.classFees?.[student.currentClass || "unassigned"] || 0,
+        );
+        const nextAmount =
+          amounts[configId] != null
+            ? Number(amounts[configId]) || 0
+            : optionalAmounts[configId] != null
+              ? Number(optionalAmounts[configId]) || 0
+              : classAmount;
+        if (amounts[configId] != null || config.isOptional) {
           optionalAmounts[configId] = nextAmount;
         }
 
@@ -882,12 +948,14 @@ export const feeService = {
     }
 
     let issued = 0;
+    let updated = 0;
     for (const configId of includeIds) {
       const result = await this.issueFeesForConfigThroughDate(
         configId,
         new Date(),
       );
       issued += result.created;
+      updated += result.updated || 0;
     }
 
     // After re-admission, ensure May+ tuition exists (April skipped by issue gate).
@@ -899,10 +967,11 @@ export const feeService = {
           new Date(),
         );
         issued += result.created;
+        updated += result.updated || 0;
       }
     }
 
-    return { issued, removed };
+    return { issued, updated, removed };
   },
 
   /** Catch up all mandatory fees for the current academic year through today. */

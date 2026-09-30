@@ -137,7 +137,12 @@ export function StudentFeeDetailsDialog({
       toast.info("This fee is already fully paid");
       return;
     }
-    setReceiptDate(new Date().toISOString().slice(0, 10));
+    const due = fee.dueDate ? String(fee.dueDate).slice(0, 10) : "";
+    setReceiptDate(
+      /^\d{4}-\d{2}-\d{2}$/.test(due)
+        ? due
+        : new Date().toISOString().slice(0, 10),
+    );
     setMarkPaidFee(fee);
   };
 
@@ -475,7 +480,8 @@ export function StudentFeeDetailsDialog({
               onChange={(e) => setReceiptDate(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Defaults to today. This date appears on the printed receipt.
+              Defaults to the bill due date. Receipt ID and printed receipt use
+              this date.
             </p>
           </div>
           <DialogFooter>

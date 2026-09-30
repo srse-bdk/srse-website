@@ -117,10 +117,8 @@ export function resolveSelectableFeeAmount(
   student: Student,
   config: FeeConfiguration,
 ): number {
-  if (
-    config.isOptional &&
-    student.optionalFeeAmounts?.[config.id] != null
-  ) {
+  // Per-student override wins whether the structure fee is optional or not.
+  if (student.optionalFeeAmounts?.[config.id] != null) {
     return Number(student.optionalFeeAmounts[config.id]) || 0;
   }
   const classKey = student.currentClass || "unassigned";

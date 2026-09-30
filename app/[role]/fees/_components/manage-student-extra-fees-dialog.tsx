@@ -130,7 +130,7 @@ export function ManageStudentExtraFeesDialog({
       });
 
       toast.success(
-        `Fees updated (${result.issued} issued, ${result.removed} removed)`,
+        `Fees updated (${result.issued} issued, ${result.updated} amount synced, ${result.removed} removed)`,
       );
       onOpenChange(false);
     } catch (error) {
@@ -250,7 +250,7 @@ export function ManageStudentExtraFeesDialog({
             ))}
             <p className="text-xs text-muted-foreground">
               Excluding removes unpaid bills only. Paid bills are kept for
-              history.
+              history. Changing amount updates unpaid bills for this student.
             </p>
           </div>
         )}

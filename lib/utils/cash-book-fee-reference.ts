@@ -186,13 +186,13 @@ function structureAmountForStudent(
   if ((student.excludedFeeConfigIds || []).includes(config.id)) {
     return 0;
   }
+  // Per-student override wins over structure class fee.
+  if (student.optionalFeeAmounts?.[config.id] != null) {
+    return Number(student.optionalFeeAmounts[config.id]) || 0;
+  }
   const classKey = student.currentClass || "";
   if (classKey && config.classFees?.[classKey] != null) {
     return Number(config.classFees[classKey]) || 0;
-  }
-  // Optional fees stored on student
-  if (config.isOptional && student.optionalFeeAmounts?.[config.id] != null) {
-    return Number(student.optionalFeeAmounts[config.id]) || 0;
   }
   return 0;
 }
