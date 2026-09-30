@@ -964,6 +964,282 @@ export const feeService = {
     return { alreadyIssued, periodKey };
   },
 
+  /**
+   * Delete all fee payment history, wipe issued bills, then re-apply fees for
+   * every active student. New admissions this AY get Admission (+ tuition from
+   * admission month); continuing students get Re-admission (+ tuition from May).
+   * Uniform / books / other mandatory fees are issued for everyone — exclude
+   * per student afterwards if needed.
+   */
+  async resetPaymentsAndReissueAllFees(throughDate = new Date()) {
+    const [paymentsRaw, financialRaw, issuedRaw, studentsData, configs] =
+      await Promise.all([
+        mutate({ action: "get", path: "feePayments" }),
+        mutate({ action: "get", path: "financialTransactions" }),
+        mutate({ action: "get", path: "feeIssued" }),
+        mutate({ action: "get", path: "students" }),
+        this.getAllConfigs(),
+      ]);
+
+    const paymentIds = Object.keys(paymentsRaw || {});
+    const financialIds = Object.keys(financialRaw || {});
+    const issuedIds = Object.keys(issuedRaw || {});
+    const students = getArrFromObj(studentsData || {}) as unknown as Student[];
+
+    const deleteOps: Promise<unknown>[] = [];
+    for (const id of paymentIds) {
+      deleteOps.push(
+        mutate({
+          action: "delete",
+          path: `feePayments/${id}`,
+          actionBy: "admin",
+        }),
+      );
+    }
+    for (const id of financialIds) {
+      deleteOps.push(
+        mutate({
+          action: "delete",
+          path: `financialTransactions/${id}`,
+          actionBy: "admin",
+        }),
+      );
+    }
+    for (const id of issuedIds) {
+      deleteOps.push(
+        mutate({
+          action: "delete",
+          path: `feeIssued/${id}`,
+          actionBy: "admin",
+        }),
+      );
+    }
+
+    const chunkSize = 40;
+    for (let i = 0; i < deleteOps.length; i += chunkSize) {
+      await Promise.all(deleteOps.slice(i, i + chunkSize));
+    }
+
+    const academicYear = getAcademicYearForDate(throughDate);
+    const { start: ayStart } = getAcademicYearRange(academicYear);
+    const admissionCfg = findSelectableFeeConfig(configs, "admission", throughDate);
+    const readmissionCfg = findSelectableFeeConfig(
+      configs,
+      "readmission",
+      throughDate,
+    );
+    const uniformCfg = findSelectableFeeConfig(configs, "uniform", throughDate);
+    const transportCfg = findSelectableFeeConfig(
+      configs,
+      "transport",
+      throughDate,
+    );
+
+    const ayFeeConfigs = configs.filter(isAcademicYearFeeConfig);
+    const nowISO = new Date().toISOString();
+    let newAdmissions = 0;
+    let continuing = 0;
+
+    for (const student of students) {
+      if (!student?.id) continue;
+      if (student.status && student.status !== "active") continue;
+
+      const admissionDate = student.admissionDate
+        ? new Date(student.admissionDate)
+        : null;
+      const isNewThisAy = Boolean(
+        admissionDate &&
+          !Number.isNaN(admissionDate.getTime()) &&
+          admissionDate >= ayStart,
+      );
+
+      if (isNewThisAy) newAdmissions += 1;
+      else continuing += 1;
+
+      const excluded = new Set<string>();
+      if (isNewThisAy) {
+        if (readmissionCfg) excluded.add(readmissionCfg.id);
+      } else {
+        if (admissionCfg) excluded.add(admissionCfg.id);
+      }
+
+      const optionalIds = new Set(student.optionalFeeIds || []);
+      const optionalAmounts: Record<string, number> = {
+        ...(student.optionalFeeAmounts || {}),
+      };
+
+      // Auto-assign optional AY / selectable fees so they get issued; admin can exclude later.
+      for (const cfg of [uniformCfg, transportCfg, ...ayFeeConfigs]) {
+        if (!cfg || !cfg.isOptional) continue;
+        if (excluded.has(cfg.id)) continue;
+        if (isNewThisAy && configMatchesSelectableKind(cfg, "readmission")) {
+          continue;
+        }
+        if (!isNewThisAy && configMatchesSelectableKind(cfg, "admission")) {
+          continue;
+        }
+        optionalIds.add(cfg.id);
+        if (optionalAmounts[cfg.id] == null) {
+          const classKey = student.currentClass || "unassigned";
+          optionalAmounts[cfg.id] =
+            Number(cfg.classFees?.[classKey] || 0) || 0;
+        }
+      }
+
+      await mutate({
+        action: "update",
+        path: `students/${student.id}`,
+        data: {
+          excludedFeeConfigIds: [...excluded],
+          optionalFeeIds: [...optionalIds],
+          optionalFeeAmounts: optionalAmounts,
+          updatedAt: nowISO,
+        },
+        actionBy: "admin",
+      });
+    }
+
+    // Issue mandatory (tuition etc.) then once-per-AY fees.
+    const catchUp = await this.catchUpAllMandatoryFees(throughDate);
+    let ayIssued = 0;
+    for (const cfg of ayFeeConfigs) {
+      try {
+        const result = await this.issueFeesForConfigThroughDate(
+          cfg.id,
+          throughDate,
+        );
+        ayIssued += result.created;
+      } catch (error) {
+        console.error(`Reissue failed for ${cfg.name}`, error);
+      }
+    }
+
+    // Also catch any remaining mandatory configs that are AY-named but monthly tuition already covered
+    return {
+      feePaymentsDeleted: paymentIds.length,
+      financialDeleted: financialIds.length,
+      feeIssuedDeleted: issuedIds.length,
+      tuitionIssued: catchUp.created,
+      ayFeesIssued: ayIssued,
+      studentsUpdated: newAdmissions + continuing,
+      newAdmissions,
+      continuing,
+    };
+  },
+
+  /**
+   * Wipe fee receipts, legacy financial ledger, and cash-book entries, and
+   * reset issued fees back to unpaid so a clean collection cycle can start.
+   */
+  async clearAllReceiptsAndLedgers() {
+    const [paymentsRaw, financialRaw, cashEntriesRaw, cashDaysRaw, issuedRaw] =
+      await Promise.all([
+        mutate({ action: "get", path: "feePayments" }),
+        mutate({ action: "get", path: "financialTransactions" }),
+        mutate({ action: "get", path: "cashBookEntries" }),
+        mutate({ action: "get", path: "cashBookDays" }),
+        mutate({ action: "get", path: "feeIssued" }),
+      ]);
+
+    const paymentIds = Object.keys(paymentsRaw || {});
+    const financialIds = Object.keys(financialRaw || {});
+    const cashEntryIds = Object.keys(cashEntriesRaw || {});
+    const cashDayIds = Object.keys(cashDaysRaw || {});
+    const issued = (getArrFromObj(issuedRaw || {}) as unknown) as FeeRecord[];
+
+    const ops: Promise<unknown>[] = [];
+
+    for (const id of paymentIds) {
+      ops.push(
+        mutate({
+          action: "delete",
+          path: `feePayments/${id}`,
+          actionBy: "admin",
+        }),
+      );
+    }
+    for (const id of financialIds) {
+      ops.push(
+        mutate({
+          action: "delete",
+          path: `financialTransactions/${id}`,
+          actionBy: "admin",
+        }),
+      );
+    }
+    for (const id of cashEntryIds) {
+      ops.push(
+        mutate({
+          action: "delete",
+          path: `cashBookEntries/${id}`,
+          actionBy: "admin",
+        }),
+      );
+    }
+    for (const id of cashDayIds) {
+      ops.push(
+        mutate({
+          action: "delete",
+          path: `cashBookDays/${id}`,
+          actionBy: "admin",
+        }),
+      );
+    }
+
+    const nowISO = new Date().toISOString();
+    for (const fee of issued) {
+      const paid = Number(fee.paidAmount) || 0;
+      if (
+        paid <= 0 &&
+        fee.status !== "paid" &&
+        fee.status !== "partial" &&
+        fee.status !== "pending_verification"
+      ) {
+        continue;
+      }
+      ops.push(
+        mutate({
+          action: "update",
+          path: `feeIssued/${fee.id}`,
+          data: {
+            paidAmount: 0,
+            status: "pending",
+            paidDate: null,
+            paymentMethod: null,
+            transactionId: null,
+            paymentScreenshot: null,
+            paymentScreenshotFileKey: null,
+            pendingVerificationAt: null,
+            pendingVerificationBy: null,
+            pendingVerificationPaymentId: null,
+            updatedAt: nowISO,
+          },
+          actionBy: "admin",
+        }),
+      );
+    }
+
+    // Batch to avoid overwhelming the client
+    const chunkSize = 40;
+    for (let i = 0; i < ops.length; i += chunkSize) {
+      await Promise.all(ops.slice(i, i + chunkSize));
+    }
+
+    return {
+      feePaymentsDeleted: paymentIds.length,
+      financialDeleted: financialIds.length,
+      cashEntriesDeleted: cashEntryIds.length,
+      cashDaysDeleted: cashDayIds.length,
+      feesReset: issued.filter(
+        (fee) =>
+          (Number(fee.paidAmount) || 0) > 0 ||
+          fee.status === "paid" ||
+          fee.status === "partial" ||
+          fee.status === "pending_verification",
+      ).length,
+    };
+  },
+
   async syncFeesForMonth(month: Date, academicYear: string) {
     // Kept for compatibility; prefer catchUpAllMandatoryFees.
     const configs = await this.getAllConfigs();

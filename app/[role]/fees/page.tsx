@@ -17,6 +17,7 @@ import {
     isWithinInterval
 } from "date-fns";
 import { AcademicYearPicker } from "./_components/academic-year-picker";
+import { ClearFeeReceiptsButton } from "./_components/clear-fee-receipts-button";
 import { MonthPicker } from "./_components/month-picker";
 import {
   getAcademicYearRange,
@@ -162,6 +163,9 @@ export default function FeesPage() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+          {(user?.role === "admin" || user?.role === "accounts") && (
+            <ClearFeeReceiptsButton />
+          )}
           <Tabs
             value={viewMode}
             onValueChange={(v) => setViewMode(v as any)}

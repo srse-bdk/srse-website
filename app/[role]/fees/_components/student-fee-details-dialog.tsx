@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -33,6 +35,8 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { FeeReceiptDialog } from "./fee-receipt-dialog";
 
@@ -62,6 +66,10 @@ export function StudentFeeDetailsDialog({
   );
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
+  const [markPaidFee, setMarkPaidFee] = useState<FeeRecord | null>(null);
+  const [receiptDate, setReceiptDate] = useState(
+    () => new Date().toISOString().slice(0, 10),
+  );
 
   const { data: issuedFeesData } = useFirebaseRealtime<FeeRecord>("feeIssued", {
     asArray: true,
@@ -120,13 +128,29 @@ export function StudentFeeDetailsDialog({
     [studentFees],
   );
 
-  const handleMarkPaid = async (fee: FeeRecord) => {
+  const openMarkPaid = (fee: FeeRecord) => {
     const pending = Math.max(
       0,
       (Number(fee.amount) || 0) - (Number(fee.paidAmount) || 0),
     );
     if (pending <= 0) {
       toast.info("This fee is already fully paid");
+      return;
+    }
+    setReceiptDate(new Date().toISOString().slice(0, 10));
+    setMarkPaidFee(fee);
+  };
+
+  const handleMarkPaid = async () => {
+    if (!markPaidFee) return;
+    const fee = markPaidFee;
+    const pending = Math.max(
+      0,
+      (Number(fee.amount) || 0) - (Number(fee.paidAmount) || 0),
+    );
+    if (pending <= 0) {
+      toast.info("This fee is already fully paid");
+      setMarkPaidFee(null);
       return;
     }
 
@@ -136,11 +160,12 @@ export function StudentFeeDetailsDialog({
         feeId: fee.id,
         amountPaid: pending,
         paymentMethod: "cash",
-        paymentDate: new Date().toISOString(),
+        paymentDate: new Date(`${receiptDate}T12:00:00`).toISOString(),
         remarks: `Marked paid — ${fee.title}`,
         paidBy: user?.role === "admin" ? "admin" : "staff",
       });
       toast.success(`Paid. Receipt ${payment.receiptNumber} created.`);
+      setMarkPaidFee(null);
       setSelectedPayment(payment);
       setReceiptOpen(true);
     } catch (error) {
@@ -316,7 +341,7 @@ export function StudentFeeDetailsDialog({
                                   <Button
                                     size="sm"
                                     disabled={isPaying}
-                                    onClick={() => handleMarkPaid(fee)}
+                                    onClick={() => openMarkPaid(fee)}
                                   >
                                     {isPaying ? (
                                       <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -417,6 +442,56 @@ export function StudentFeeDetailsDialog({
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(markPaidFee)}
+        onOpenChange={(next) => {
+          if (!next) setMarkPaidFee(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Mark fee as paid</DialogTitle>
+            <DialogDescription>
+              {markPaidFee
+                ? `${markPaidFee.title} — ${formatCurrency(
+                    Math.max(
+                      0,
+                      (Number(markPaidFee.amount) || 0) -
+                        (Number(markPaidFee.paidAmount) || 0),
+                    ),
+                  )}`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="receipt-date">Receipt date</Label>
+            <Input
+              id="receipt-date"
+              type="date"
+              value={receiptDate}
+              onChange={(e) => setReceiptDate(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Defaults to today. This date appears on the printed receipt.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMarkPaidFee(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleMarkPaid}
+              disabled={!receiptDate || Boolean(payingFeeId)}
+            >
+              {payingFeeId ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Confirm & create receipt
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
