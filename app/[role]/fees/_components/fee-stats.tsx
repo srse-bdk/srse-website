@@ -10,6 +10,7 @@ interface FeeStatsProps {
     totalCollections: number;
     totalPending: number;
     collectionRate: number;
+    periodLabel?: string;
 }
 
 export function FeeStats({
@@ -17,6 +18,7 @@ export function FeeStats({
     totalCollections,
     totalPending,
     collectionRate,
+    periodLabel = "this year",
 }: FeeStatsProps) {
     const stats = [
         {
@@ -24,7 +26,7 @@ export function FeeStats({
             value: totalCollections,
             isCurrency: true,
             icon: Banknote,
-            description: "Total fees collected this year",
+            description: `Fees collected ${periodLabel}`,
             gradient: "from-emerald-500 to-emerald-600",
             bgGradient: "from-emerald-500/10 to-emerald-600/5",
             accentColor: "text-emerald-500",
@@ -34,7 +36,7 @@ export function FeeStats({
             value: totalPending,
             isCurrency: true,
             icon: TrendingDown,
-            description: "Total outstanding fees",
+            description: `Outstanding on bills due ${periodLabel}`,
             gradient: "from-rose-500 to-rose-600",
             bgGradient: "from-rose-500/10 to-rose-600/5",
             accentColor: "text-rose-500",
@@ -44,7 +46,7 @@ export function FeeStats({
             value: collectionRate,
             isPercentage: true,
             icon: TrendingUp,
-            description: "Percentage of fees collected",
+            description: `Paid share of bills due ${periodLabel}`,
             gradient: "from-blue-500 to-blue-600",
             bgGradient: "from-blue-500/10 to-blue-600/5",
             accentColor: "text-blue-500",

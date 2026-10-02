@@ -145,6 +145,54 @@ export function classTokensMatch(left: string, right: string): boolean {
   return false;
 }
 
+/**
+ * Look up a class-wise fee amount even when labels differ
+ * (e.g. student "I" vs structure "Class 1" / "1").
+ */
+export function resolveClassFeeAmount(
+  classFees: Record<string, number> | undefined | null,
+  studentClass?: string | null,
+): number {
+  const entry = findClassFeeEntry(classFees, studentClass);
+  return entry ? Number(entry.amount) || 0 : 0;
+}
+
+/** True when a matching classFees key exists (including explicit 0). */
+export function hasClassFeeForStudent(
+  classFees: Record<string, number> | undefined | null,
+  studentClass?: string | null,
+): boolean {
+  return findClassFeeEntry(classFees, studentClass) != null;
+}
+
+function findClassFeeEntry(
+  classFees: Record<string, number> | undefined | null,
+  studentClass?: string | null,
+): { key: string; amount: number } | null {
+  if (!classFees) return null;
+
+  const key = String(studentClass || "").trim() || "unassigned";
+  if (Object.prototype.hasOwnProperty.call(classFees, key)) {
+    return { key, amount: Number(classFees[key]) || 0 };
+  }
+
+  for (const [feeClass, amount] of Object.entries(classFees)) {
+    if (!feeClass || feeClass === "unassigned") continue;
+    if (classTokensMatch(feeClass, key)) {
+      return { key: feeClass, amount: Number(amount) || 0 };
+    }
+  }
+
+  if (
+    key === "unassigned" &&
+    Object.prototype.hasOwnProperty.call(classFees, "unassigned")
+  ) {
+    return { key: "unassigned", amount: Number(classFees.unassigned) || 0 };
+  }
+
+  return null;
+}
+
 export function sectionTokensMatch(left?: string, right?: string): boolean {
   const leftToken = normalizeSectionToken(left);
   const rightToken = normalizeSectionToken(right);

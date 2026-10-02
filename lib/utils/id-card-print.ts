@@ -87,11 +87,22 @@ export function getIdCardPrintFilterStats<T extends PrintableRecord>(
   };
 }
 
+export type IdCardSheetDensity = "full" | "one";
+
+export function getIdCardCardsPerSheet(
+  orientation: IdCardOrientation = "landscape",
+  density: IdCardSheetDensity = "full",
+): number {
+  if (density === "one") return 1;
+  return getIdCardLayout(orientation).cardsPerPage;
+}
+
 export function chunkIdCardPages<T>(
   items: T[],
   orientation: IdCardOrientation = "landscape",
+  density: IdCardSheetDensity = "full",
 ): T[][] {
-  const pageSize = getIdCardLayout(orientation).cardsPerPage;
+  const pageSize = getIdCardCardsPerSheet(orientation, density);
   if (items.length === 0) return [];
   const pages: T[][] = [];
   for (let index = 0; index < items.length; index += pageSize) {

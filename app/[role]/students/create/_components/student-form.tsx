@@ -67,6 +67,10 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { normalizeBloodGroup } from "@/lib/utils/blood-group";
+import {
+  getAcademicYearStartDateInputValue,
+  toCalendarDateInputValue,
+} from "@/lib/utils/fee-dues";
 
 // Zod schema - Only name is required
 const guardianSchema = z.object({
@@ -138,7 +142,7 @@ const studentSchema = z.object({
   currentSection: z.string().optional(),
   rollNumber: z.string().optional(),
   mediumOfInstruction: z.string().optional(),
-  rteAct: z.string().optional(),
+  isRte: z.boolean().optional(),
   rteEntitlement: z.string().optional(),
   previousClass: z.string().optional(),
   previousClassResult: z.string().optional(),
@@ -222,7 +226,8 @@ function studentToFormDefaults(student: Student): StudentFormData {
 
   return {
     admissionNumber: student.admissionNumber || "",
-    admissionDate: student.admissionDate || "",
+    admissionDate:
+      toCalendarDateInputValue(student.admissionDate) || "",
     firstName: student.firstName || nameFromFull?.firstName || "",
     lastName: student.lastName || nameFromFull?.lastName || "",
     dateOfBirth: student.dateOfBirth || "",
@@ -264,7 +269,7 @@ function studentToFormDefaults(student: Student): StudentFormData {
     currentSection: student.currentSection || "",
     rollNumber: student.rollNumber || "",
     mediumOfInstruction: "",
-    rteAct: "",
+    isRte: Boolean(student.isRte),
     rteEntitlement: "",
     previousClass: "",
     previousClassResult: "",
@@ -315,7 +320,11 @@ function buildStudentPayloadFromForm(
   const normalizedBloodGroup = normalizeBloodGroup(data.bloodGroup);
 
   const payload = {
-    ...(data.admissionDate && { admissionDate: data.admissionDate }),
+    ...(data.admissionDate
+      ? { admissionDate: data.admissionDate }
+      : options.isEdit
+        ? {}
+        : { admissionDate: getAcademicYearStartDateInputValue() }),
     firstName: data.firstName,
     lastName: data.lastName,
     ...(data.dateOfBirth && { dateOfBirth: data.dateOfBirth }),
@@ -362,6 +371,7 @@ function buildStudentPayloadFromForm(
     ...(data.currentSection && { currentSection: data.currentSection }),
     ...(data.rollNumber && { rollNumber: data.rollNumber }),
     ...(data.siblingIds && { siblingIds: data.siblingIds }),
+    isRte: Boolean(data.isRte),
     ...(data.optionalFeeIds && { optionalFeeIds: data.optionalFeeIds }),
     ...(data.optionalFeeAmounts && {
       optionalFeeAmounts: data.optionalFeeAmounts,
@@ -445,7 +455,7 @@ export function StudentForm({ student }: StudentFormProps = {}) {
       ? studentToFormDefaults(student)
       : {
       admissionNumber: "",
-      admissionDate: "",
+      admissionDate: getAcademicYearStartDateInputValue(),
       firstName: "",
       lastName: "",
       dateOfBirth: "",
@@ -489,7 +499,7 @@ export function StudentForm({ student }: StudentFormProps = {}) {
       currentSection: "",
       rollNumber: "",
       mediumOfInstruction: "",
-      rteAct: "",
+      isRte: false,
       rteEntitlement: "",
       previousClass: "",
       previousClassResult: "",
@@ -522,6 +532,13 @@ export function StudentForm({ student }: StudentFormProps = {}) {
     form.reset(studentToFormDefaults(student));
     setHasSiblings((student.siblingIds?.length || 0) > 0);
   }, [student?.id, student?.updatedAt, student, form]);
+
+  // Create mode: always lock default admission date to 1 April of current AY.
+  useEffect(() => {
+    if (student) return;
+    const april = getAcademicYearStartDateInputValue();
+    form.setValue("admissionDate", april, { shouldDirty: false });
+  }, [student, form]);
 
   useEffect(() => {
     const loadStudents = async () => {
@@ -814,12 +831,20 @@ export function StudentForm({ student }: StudentFormProps = {}) {
                   <FormItem>
                     <FormLabel>Admission Date</FormLabel>
                     <FormControl>
-                      <DatePicker
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Select admission date"
+                      <Input
+                        type="date"
+                        value={
+                          field.value
+                            ? String(field.value).slice(0, 10)
+                            : getAcademicYearStartDateInputValue()
+                        }
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
+                    <p className="text-[11px] text-muted-foreground">
+                      New students default to 1 April of the current academic
+                      year ({getAcademicYearStartDateInputValue()}).
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1496,13 +1521,13 @@ export function StudentForm({ student }: StudentFormProps = {}) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="rteAct"
+                name="isRte"
                 render={({ field }) => (
                   <FormItem className="w-full">
                     <FormLabel>Admitted under RTE Act?</FormLabel>
                     <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
+                      onValueChange={(v) => field.onChange(v === "Yes")}
+                      value={field.value ? "Yes" : "No"}
                     >
                       <FormControl>
                         <SelectTrigger className="w-full">
@@ -1514,6 +1539,11 @@ export function StudentForm({ student }: StudentFormProps = {}) {
                         <SelectItem value="No">No</SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-[11px] text-muted-foreground">
+                      Applies to new admissions and re-admission / continuing
+                      students. Excluded from school fee pending; listed under
+                      Fee Management → RTE for government claim.
+                    </p>
                   </FormItem>
                 )}
               />

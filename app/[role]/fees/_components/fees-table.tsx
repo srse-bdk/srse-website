@@ -33,13 +33,15 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/hooks/use-app-store";
-import type { FeeRecord } from "@/lib/types/fee.type";
+import type { FeeConfiguration, FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
 import { formatCurrency } from "@/lib/utils";
 import {
     getAcademicYearForDate,
     getAcademicYearRange,
 } from "@/lib/utils/fee-dues";
+import { filterApplicableFeesForStudent } from "@/lib/utils/fee-bill-rules";
+import { isStudentRte } from "@/lib/utils/student-rte";
 import {
     CreditCard,
     Download,
@@ -58,6 +60,7 @@ import { StudentFeeDetailsDialog } from "./student-fee-details-dialog";
 interface FeesTableProps {
   students: Student[];
   fees: FeeRecord[]; // Flat list of all fee records
+  feeConfigs?: FeeConfiguration[];
   selectedMonth?: Date;
   selectedAcademicYear?: string;
   viewMode?: "monthly" | "yearly";
@@ -65,7 +68,8 @@ interface FeesTableProps {
 
 export function FeesTable({ 
   students, 
-  fees, 
+  fees,
+  feeConfigs = [],
   selectedMonth = new Date(), 
   selectedAcademicYear = "2023-2024",
   viewMode = "monthly",
@@ -73,7 +77,7 @@ export function FeesTable({
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "paid" | "partial" | "pending" | "pending_verification"
+    "all" | "paid" | "partial" | "pending" | "pending_verification" | "rte"
   >("all");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -97,8 +101,17 @@ export function FeesTable({
   );
 
   // Aggregate stats per student across the full academic year
+  // RTE students are listed with govt-claim status; their balance is not school pending.
+  // Totals respect admission XOR readmission and May tuition for continuing students.
   const studentFeeMap = students.map((student) => {
-    const studentFees = fees.filter((f) => {
+    const rte = isStudentRte(student);
+    const applicable = filterApplicableFeesForStudent(
+      fees,
+      student,
+      feeConfigs,
+      academicYear,
+    );
+    const studentFees = applicable.filter((f) => {
       const matchesCategory =
         selectedCategory === "all" || f.category === selectedCategory;
       if (f.studentId !== student.id || !matchesCategory) return false;
@@ -127,12 +140,15 @@ export function FeesTable({
       | "pending"
       | "pending_verification"
       | "overdue"
-      | "no_fee" = "no_fee";
+      | "no_fee"
+      | "rte" = "no_fee";
     const hasPendingVerification = studentFees.some(
       (fee) => fee.status === "pending_verification",
     );
 
-    if (totalDue > 0) {
+    if (rte) {
+      status = "rte";
+    } else if (totalDue > 0) {
       if (balance <= 0) {
         status = "paid";
       } else if (hasPendingVerification) {
@@ -153,7 +169,9 @@ export function FeesTable({
       guardian,
       totalDue,
       totalPaid,
-      balance,
+      // School collectable pending is 0 for RTE
+      balance: rte ? 0 : balance,
+      govtOutstanding: rte ? balance : 0,
       status,
       lastPaymentDate: studentFees
         .filter((f) => f.paidDate)
@@ -187,12 +205,13 @@ export function FeesTable({
   // Count by status for tabs
   const statusCounts = {
     all: studentFeeMap.length,
-    paid: studentFeeMap.filter(item => item.status === "paid").length,
-    partial: studentFeeMap.filter(item => item.status === "partial").length,
-    pending: studentFeeMap.filter(item => item.status === "pending").length,
+    paid: studentFeeMap.filter((item) => item.status === "paid").length,
+    partial: studentFeeMap.filter((item) => item.status === "partial").length,
+    pending: studentFeeMap.filter((item) => item.status === "pending").length,
     pending_verification: studentFeeMap.filter(
       (item) => item.status === "pending_verification",
     ).length,
+    rte: studentFeeMap.filter((item) => item.status === "rte").length,
   };
 
   const getStatusBadge = (status: string) => {
@@ -201,6 +220,12 @@ export function FeesTable({
         return (
           <Badge variant="secondary" className="border-none">
             No fee
+          </Badge>
+        );
+      case "rte":
+        return (
+          <Badge className="bg-violet-100 text-violet-800 hover:bg-violet-200 border-none">
+            RTE / Govt
           </Badge>
         );
       case "paid":
@@ -242,7 +267,7 @@ export function FeesTable({
     <div className="space-y-4">
       {/* Status Tabs */}
       <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)} className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto gap-1">
           <TabsTrigger value="all" className="gap-2">
             All <Badge variant="secondary" className="ml-1">{statusCounts.all}</Badge>
           </TabsTrigger>
@@ -257,6 +282,9 @@ export function FeesTable({
           </TabsTrigger>
           <TabsTrigger value="paid" className="gap-2">
             Paid <Badge variant="secondary" className="ml-1">{statusCounts.paid}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="rte" className="gap-2">
+            RTE <Badge variant="secondary" className="ml-1">{statusCounts.rte}</Badge>
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -365,7 +393,16 @@ export function FeesTable({
                       {formatCurrency(item.totalPaid)}
                     </TableCell>
                     <TableCell className="text-red-600 font-semibold">
-                      {formatCurrency(item.balance)}
+                      {item.status === "rte" ? (
+                        <span className="text-violet-700 dark:text-violet-400">
+                          {formatCurrency(item.govtOutstanding)}{" "}
+                          <span className="text-[10px] font-normal text-muted-foreground">
+                            (govt)
+                          </span>
+                        </span>
+                      ) : (
+                        formatCurrency(item.balance)
+                      )}
                     </TableCell>
                     <TableCell>{getStatusBadge(item.status)}</TableCell>
                     <TableCell className="text-right">
@@ -388,14 +425,27 @@ export function FeesTable({
                           >
                             <Eye className="mr-2 h-4 w-4" /> View Details
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setSelectedStudent(item.student);
-                              setIsCollectOpen(true);
-                            }}
-                          >
-                            <CreditCard className="mr-2 h-4 w-4" /> Collect Fee
-                          </DropdownMenuItem>
+                          {item.status !== "rte" && (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedStudent(item.student);
+                                setIsCollectOpen(true);
+                              }}
+                            >
+                              <CreditCard className="mr-2 h-4 w-4" /> Collect Fee
+                            </DropdownMenuItem>
+                          )}
+                          {isParent && item.status !== "rte" && (
+                            <DropdownMenuItem
+                              className="text-primary font-bold"
+                              onClick={() => {
+                                setSelectedStudent(item.student);
+                                setIsParentPayOpen(true);
+                              }}
+                            >
+                              <Wallet className="mr-2 h-4 w-4" /> Pay Now
+                            </DropdownMenuItem>
+                          )}
                           {canManageExtraFees && (
                             <DropdownMenuItem
                               onClick={() => {
@@ -405,17 +455,6 @@ export function FeesTable({
                             >
                               <Settings2 className="mr-2 h-4 w-4" />{" "}
                               Admission / Uniform / Transport
-                            </DropdownMenuItem>
-                          )}
-                          {isParent && (
-                            <DropdownMenuItem
-                              className="text-primary font-bold"
-                              onClick={() => {
-                                setSelectedStudent(item.student);
-                                setIsParentPayOpen(true);
-                              }}
-                            >
-                              <Wallet className="mr-2 h-4 w-4" /> Pay Now
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>

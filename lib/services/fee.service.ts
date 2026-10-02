@@ -1,6 +1,7 @@
 import { FeeCategory, FeeConfiguration, FeeRecord, FeeStatus } from "@/lib/types/fee.type";
 import type { FeePayment } from "@/lib/types/fee-payment.type";
 import type { Student } from "@/lib/types/student.type";
+import { resolveClassFeeAmount, classTokensMatch } from "@/lib/utils/class-section-match";
 import {
   getAcademicYearForDate,
   getAcademicYearRange,
@@ -15,11 +16,13 @@ import {
   configMatchesSelectableKind,
   findSelectableFeeConfig,
   isAcademicYearFeeConfig,
+  isBooksOrCopiesFeeConfig,
   isSelectableFeeIncluded,
   isTuitionFeeConfig,
   shouldSkipTuitionPeriodForReadmission,
   studentHasReadmissionIncluded,
 } from "@/lib/utils/student-selectable-fees";
+import { isNewAdmissionInAcademicYear } from "@/lib/utils/student-rte";
 
 interface RecordFeePaymentInput {
   feeId: string;
@@ -148,15 +151,17 @@ function buildFeeIssueRecord(params: {
   if (excluded.includes(config.id)) return null;
 
   const classId = student.currentClass || "unassigned";
-  // Per-student override (e.g. uniform 1250) wins over structure class fee.
+  // Per-student override wins only when > 0. A stored 0 (from before class
+  // fees were set) must not block structure amounts after Set Fee + catch-up.
+  const rawOverride = student.optionalFeeAmounts?.[config.id];
   const overrideAmount =
-    student.optionalFeeAmounts?.[config.id] != null
-      ? Number(student.optionalFeeAmounts[config.id]) || 0
+    rawOverride != null && Number(rawOverride) > 0
+      ? Number(rawOverride)
       : null;
   const amount =
     overrideAmount != null
       ? overrideAmount
-      : Number(config.classFees?.[classId] || 0);
+      : resolveClassFeeAmount(config.classFees, classId);
   if (amount <= 0) return null;
 
   const isReadmission = configMatchesSelectableKind(config, "readmission");
@@ -226,10 +231,27 @@ function studentEligibleForPeriod(
 ): boolean {
   if (student.status && student.status !== "active") return false;
 
-  // Once-per-AY fees: not gated by late createdAt.
+  const academicYear = getAcademicYearForDate(issueDate);
+  const isNewThisAy = isNewAdmissionInAcademicYear(
+    student as Student,
+    academicYear,
+  );
+  const isContinuing = !isNewThisAy;
+
+  // Once-per-AY fees: billed in April of the session.
+  // Admission XOR re-admission is decided by new vs continuing (not checkboxes alone).
+  // Books & copies are always mandatory each year.
   if (isAcademicYearFeeConfig(config)) {
+    if (isBooksOrCopiesFeeConfig(config)) {
+      return true;
+    }
     if (configMatchesSelectableKind(config, "readmission")) {
-      return isSelectableFeeIncluded(student as Student, config);
+      // Continuing only — either/or with admission.
+      return isContinuing;
+    }
+    if (configMatchesSelectableKind(config, "admission")) {
+      // New admissions only — either/or with re-admission.
+      return isNewThisAy;
     }
     if ((student.excludedFeeConfigIds || []).includes(config.id)) return false;
     if (config.isOptional) {
@@ -238,15 +260,14 @@ function studentEligibleForPeriod(
     return true;
   }
 
-  const academicYear = getAcademicYearForDate(issueDate);
   const hasReadmission = studentHasReadmissionIncluded(
     student as Student,
     allConfigs,
   );
 
-  // Continuing students with re-admission: tuition from May of this AY.
+  // Continuing / re-admission: monthly tuition from May (April covered by re-admission).
   if (
-    hasReadmission &&
+    (isContinuing || hasReadmission) &&
     config.cycle === "monthly" &&
     isTuitionFeeConfig(config)
   ) {
@@ -256,6 +277,148 @@ function studentEligibleForPeriod(
 
   const anchor = getStudentFeeAnchorDate(student as Student);
   return startOfMonth(anchor) <= startOfMonth(issueDate);
+}
+
+/**
+ * Sync admission vs re-admission (either/or) and force books/copies for a student.
+ * - New this AY: admission only (no re-admission); tuition from admission month
+ * - Continuing: re-admission only in April (no admission); tuition from May
+ * - Books & copies: mandatory every academic year
+ */
+function assignAdmissionReadmissionAndBooks(params: {
+  student: Student;
+  configs: FeeConfiguration[];
+  academicYear: string;
+  throughDate?: Date;
+  /** When true, replace exclusions with only adm/read exclusivity (full reset). */
+  resetExclusions?: boolean;
+}): {
+  isNewThisAy: boolean;
+  excludedFeeConfigIds: string[];
+  optionalFeeIds: string[];
+  optionalFeeAmounts: Record<string, number>;
+} {
+  const {
+    student,
+    configs,
+    academicYear,
+    throughDate = new Date(),
+    resetExclusions = false,
+  } = params;
+
+  const isNewThisAy = isNewAdmissionInAcademicYear(student, academicYear);
+  const admissionCfg = findSelectableFeeConfig(configs, "admission", throughDate);
+  const readmissionCfg = findSelectableFeeConfig(
+    configs,
+    "readmission",
+    throughDate,
+  );
+  const uniformCfg = findSelectableFeeConfig(configs, "uniform", throughDate);
+  const transportCfg = findSelectableFeeConfig(
+    configs,
+    "transport",
+    throughDate,
+  );
+  const booksConfigs = configs.filter(isBooksOrCopiesFeeConfig);
+  const ayFeeConfigs = configs.filter(isAcademicYearFeeConfig);
+
+  const excluded = new Set(
+    resetExclusions ? [] : student.excludedFeeConfigIds || [],
+  );
+
+  // Clear then re-apply either/or: never both admission and re-admission.
+  if (admissionCfg) excluded.delete(admissionCfg.id);
+  if (readmissionCfg) excluded.delete(readmissionCfg.id);
+  for (const books of booksConfigs) {
+    excluded.delete(books.id);
+  }
+
+  if (isNewThisAy) {
+    if (readmissionCfg) excluded.add(readmissionCfg.id);
+  } else if (admissionCfg) {
+    excluded.add(admissionCfg.id);
+  }
+
+  const optionalIds = new Set(student.optionalFeeIds || []);
+  const optionalAmounts: Record<string, number> = {
+    ...(student.optionalFeeAmounts || {}),
+  };
+
+  const ensureAssigned = (cfg: FeeConfiguration | null | undefined) => {
+    if (!cfg) return;
+    if (excluded.has(cfg.id)) return;
+    // Assign when optional in structure, or books (mandatory yearly even if marked optional).
+    if (!cfg.isOptional && !isBooksOrCopiesFeeConfig(cfg)) return;
+    optionalIds.add(cfg.id);
+    const classAmount = resolveClassFeeAmount(
+      cfg.classFees,
+      student.currentClass || "unassigned",
+    );
+    const prev = optionalAmounts[cfg.id];
+    // Refresh when unset or zero so newly set class fees apply on catch-up.
+    if (prev == null || Number(prev) === 0) {
+      if (classAmount > 0) {
+        optionalAmounts[cfg.id] = classAmount;
+      } else {
+        delete optionalAmounts[cfg.id];
+      }
+    }
+  };
+
+  for (const cfg of [uniformCfg, transportCfg, ...ayFeeConfigs, ...booksConfigs]) {
+    if (!cfg) continue;
+    // Either/or gate while looping AY fees.
+    if (isNewThisAy && configMatchesSelectableKind(cfg, "readmission")) continue;
+    if (!isNewThisAy && configMatchesSelectableKind(cfg, "admission")) continue;
+    ensureAssigned(cfg);
+  }
+
+  // Force the correct side of either/or.
+  if (isNewThisAy) {
+    if (admissionCfg) {
+      excluded.delete(admissionCfg.id);
+      ensureAssigned(admissionCfg);
+    }
+    if (readmissionCfg) {
+      optionalIds.delete(readmissionCfg.id);
+      delete optionalAmounts[readmissionCfg.id];
+      excluded.add(readmissionCfg.id);
+    }
+  } else {
+    if (readmissionCfg) {
+      excluded.delete(readmissionCfg.id);
+      ensureAssigned(readmissionCfg);
+    }
+    if (admissionCfg) {
+      optionalIds.delete(admissionCfg.id);
+      delete optionalAmounts[admissionCfg.id];
+      excluded.add(admissionCfg.id);
+    }
+  }
+
+  // Books & copies always on; always refresh amount from structure when 0/unset.
+  for (const books of booksConfigs) {
+    excluded.delete(books.id);
+    ensureAssigned(books);
+    const classAmount = resolveClassFeeAmount(
+      books.classFees,
+      student.currentClass || "unassigned",
+    );
+    if (classAmount > 0) {
+      optionalIds.add(books.id);
+      const prev = optionalAmounts[books.id];
+      if (prev == null || Number(prev) === 0) {
+        optionalAmounts[books.id] = classAmount;
+      }
+    }
+  }
+
+  return {
+    isNewThisAy,
+    excludedFeeConfigIds: [...excluded],
+    optionalFeeIds: [...optionalIds],
+    optionalFeeAmounts: optionalAmounts,
+  };
 }
 
 export const feeService = {
@@ -601,21 +764,27 @@ export const feeService = {
         if (!studentEligibleForPeriod(student, issueDate, config, configs)) {
           continue;
         }
-        // Optional fees are only issued when explicitly assigned to the student.
-        if (config.isOptional) {
+        // Optional fees need assignment — except books/copies (mandatory yearly).
+        if (config.isOptional && !isBooksOrCopiesFeeConfig(config)) {
           const ids: string[] = student.optionalFeeIds || [];
           const amounts = student.optionalFeeAmounts || {};
           if (!ids.includes(config.id) && amounts[config.id] == null) {
             continue;
           }
         }
-        // Re-admission includes April tuition — do not also bill April tuition.
+        // Re-admission (April) covers April tuition — monthly tuition from May.
+        const academicYearForIssue = getAcademicYearForDate(issueDate);
+        const isContinuingStudent = !isNewAdmissionInAcademicYear(
+          student as Student,
+          academicYearForIssue,
+        );
         if (
           shouldSkipTuitionPeriodForReadmission({
             student,
             config,
             issueDate,
             configs,
+            isContinuingStudent,
           })
         ) {
           const periodKey = getIssuePeriodKey(config.cycle, issueDate);
@@ -825,27 +994,21 @@ export const feeService = {
 
     const configById = new Map(configs.map((c) => [c.id, c]));
 
-    // Admission and re-admission are mutually exclusive.
+    // Admission and re-admission are either/or — never both.
     const admissionCfg = findSelectableFeeConfig(configs, "admission");
     const readmissionCfg = findSelectableFeeConfig(configs, "readmission");
+    const academicYear = getAcademicYearForDate(new Date());
+    const isNewThisAy = isNewAdmissionInAcademicYear(student, academicYear);
     const normalizedInclusions = { ...inclusions };
     if (admissionCfg && readmissionCfg) {
       const wantAdmission = normalizedInclusions[admissionCfg.id] === true;
       const wantReadmission = normalizedInclusions[readmissionCfg.id] === true;
       if (wantAdmission && wantReadmission) {
-        // Prefer whichever was already included; default to admission.
-        const alreadyReadmission = isSelectableFeeIncluded(
-          student,
-          readmissionCfg,
-        );
-        const alreadyAdmission = isSelectableFeeIncluded(
-          student,
-          admissionCfg,
-        );
-        if (alreadyReadmission && !alreadyAdmission) {
-          normalizedInclusions[admissionCfg.id] = false;
-        } else {
+        // Prefer the side that matches new vs continuing; else keep existing.
+        if (isNewThisAy) {
           normalizedInclusions[readmissionCfg.id] = false;
+        } else {
+          normalizedInclusions[admissionCfg.id] = false;
         }
       }
     }
@@ -866,8 +1029,9 @@ export const feeService = {
         // Persist per-student amount for selectable fees (uniform etc.) even
         // when the structure fee is not marked optional — otherwise the dialog
         // amount never sticks and unpaid bills keep the old class fee.
-        const classAmount = Number(
-          config.classFees?.[student.currentClass || "unassigned"] || 0,
+        const classAmount = resolveClassFeeAmount(
+          config.classFees,
+          student.currentClass || "unassigned",
         );
         const nextAmount =
           amounts[configId] != null
@@ -977,22 +1141,149 @@ export const feeService = {
   /** Catch up all mandatory fees for the current academic year through today. */
   async catchUpAllMandatoryFees(throughDate = new Date()) {
     const academicYear = getAcademicYearForDate(throughDate);
-    const configs = await this.getAllConfigs();
+    const [configs, studentsData] = await Promise.all([
+      this.getAllConfigs(),
+      mutate({ action: "get", path: "students" }),
+    ]);
+    const students = getArrFromObj(studentsData || {}) as unknown as Student[];
+    const nowISO = new Date().toISOString();
+
+    // Sync either/or + books before issuing so Readmission reaches continuing students.
+    let synced = 0;
+    let continuing = 0;
+    let newAdmissions = 0;
+    for (const student of students) {
+      if (!student?.id) continue;
+      if (student.status && student.status !== "active") continue;
+
+      const assigned = assignAdmissionReadmissionAndBooks({
+        student,
+        configs,
+        academicYear,
+        throughDate,
+      });
+      synced += 1;
+      if (assigned.isNewThisAy) newAdmissions += 1;
+      else continuing += 1;
+
+      await mutate({
+        action: "update",
+        path: `students/${student.id}`,
+        data: {
+          excludedFeeConfigIds: assigned.excludedFeeConfigIds,
+          optionalFeeIds: assigned.optionalFeeIds,
+          optionalFeeAmounts: assigned.optionalFeeAmounts,
+          updatedAt: nowISO,
+        },
+        actionBy: "admin",
+      });
+
+      if (!assigned.isNewThisAy) {
+        await this.deleteUnpaidAprilTuitionForStudent(
+          student.id,
+          configs,
+          throughDate,
+        );
+      }
+      // Drop unpaid wrong-side admission/readmission bills.
+      await this.deleteUnpaidWrongAdmissionReadmissionBills(
+        student.id,
+        configs,
+        assigned.isNewThisAy,
+      );
+    }
+
     const mandatory = configs.filter(
       (cfg) =>
         !cfg.isOptional &&
         (!cfg.academicYear || cfg.academicYear === academicYear),
     );
+    // Also catch books if marked optional in structure (still mandatory yearly).
+    const booksConfigs = configs.filter(isBooksOrCopiesFeeConfig);
+    const toIssue = [
+      ...mandatory,
+      ...booksConfigs.filter((b) => !mandatory.some((m) => m.id === b.id)),
+    ];
 
     let created = 0;
-    for (const cfg of mandatory) {
+    for (const cfg of toIssue) {
       const result = await this.issueFeesForConfigThroughDate(
         cfg.id,
         throughDate,
       );
       created += result.created;
     }
-    return { created, configs: mandatory.length };
+    return {
+      created,
+      configs: toIssue.length,
+      studentsSynced: synced,
+      newAdmissions,
+      continuing,
+    };
+  },
+
+  /**
+   * Remove unpaid Admission bills for continuing students, or unpaid
+   * Re-admission bills for new admissions (either/or cleanup).
+   */
+  async deleteUnpaidWrongAdmissionReadmissionBills(
+    studentId: string,
+    configs: FeeConfiguration[],
+    isNewThisAy: boolean,
+  ) {
+    const admissionCfg = findSelectableFeeConfig(configs, "admission");
+    const readmissionCfg = findSelectableFeeConfig(configs, "readmission");
+    const wrongIds = new Set<string>();
+    if (isNewThisAy && readmissionCfg) wrongIds.add(readmissionCfg.id);
+    if (!isNewThisAy && admissionCfg) wrongIds.add(admissionCfg.id);
+    if (wrongIds.size === 0) return { deleted: 0 };
+
+    const issued = await this.getFeesByStudent(studentId);
+    const removable = issued.filter((fee) => {
+      if (!fee.feeConfigId || !wrongIds.has(fee.feeConfigId)) return false;
+      const paid = Number(fee.paidAmount) || 0;
+      return paid <= 0 && fee.status !== "paid" && fee.status !== "partial";
+    });
+
+    await Promise.all(
+      removable.map((fee) =>
+        mutate({
+          action: "delete",
+          path: `feeIssued/${fee.id}`,
+          actionBy: "admin",
+        }),
+      ),
+    );
+    return { deleted: removable.length };
+  },
+
+  /**
+   * Catch up one fee config through today. For admission / re-admission /
+   * tuition / books, syncs either/or assignments first.
+   */
+  async catchUpConfigThroughDate(configId: string, throughDate = new Date()) {
+    const configs = await this.getAllConfigs();
+    const config = configs.find((c) => c.id === configId);
+    if (!config) throw new Error("Fee config not found");
+
+    const needsSync =
+      isAcademicYearFeeConfig(config) || isTuitionFeeConfig(config);
+    if (needsSync) {
+      // Full sync so Readmission/Admission/Books/tuition rules stay consistent.
+      return this.catchUpAllMandatoryFees(throughDate);
+    }
+
+    const result = await this.issueFeesForConfigThroughDate(
+      configId,
+      throughDate,
+    );
+    return {
+      created: result.created,
+      configs: 1,
+      studentsSynced: 0,
+      newAdmissions: 0,
+      continuing: 0,
+    };
   },
 
   /**
@@ -1003,8 +1294,19 @@ export const feeService = {
     configIds: string[],
     throughDate = new Date(),
   ) {
-    let created = 0;
+    const configs = await this.getAllConfigs();
     const unique = [...new Set(configIds.filter(Boolean))];
+    const needsFullSync = unique.some((id) => {
+      const cfg = configs.find((c) => c.id === id);
+      return cfg
+        ? isAcademicYearFeeConfig(cfg) || isTuitionFeeConfig(cfg)
+        : false;
+    });
+    if (needsFullSync) {
+      return this.catchUpAllMandatoryFees(throughDate);
+    }
+
+    let created = 0;
     for (const id of unique) {
       try {
         const result = await this.issueFeesForConfigThroughDate(id, throughDate);
@@ -1013,7 +1315,7 @@ export const feeService = {
         console.error(`Catch-up failed for config ${id}`, error);
       }
     }
-    return { created };
+    return { created, configs: unique.length, studentsSynced: 0, newAdmissions: 0, continuing: 0 };
   },
 
   async getIssuedStatusForConfig(configId: string, issueDate = new Date()) {
@@ -1031,6 +1333,136 @@ export const feeService = {
       (item) => item.feeConfigId === configId && item.issuePeriodKey === periodKey,
     );
     return { alreadyIssued, periodKey };
+  },
+
+  /**
+   * Rebuild unpaid fee bills for students in the given standards (e.g. 3–5),
+   * using each student's admission date for tuition start and admission vs
+   * re-admission. Paid bills are kept. Does not wipe school-wide payments.
+   */
+  async reissueFeesForClassesByAdmissionDate(
+    classNumbers: number[] = [3, 4, 5],
+    throughDate = new Date(),
+  ) {
+    const [issuedRaw, studentsData, configs] = await Promise.all([
+      mutate({ action: "get", path: "feeIssued" }),
+      mutate({ action: "get", path: "students" }),
+      this.getAllConfigs(),
+    ]);
+
+    const allIssued = (getArrFromObj(issuedRaw || {}) as unknown) as FeeRecord[];
+    const students = getArrFromObj(studentsData || {}) as unknown as Student[];
+    const academicYear = getAcademicYearForDate(throughDate);
+
+    const classLabels = classNumbers.flatMap((n) => [
+      String(n),
+      `Class ${n}`,
+      `Std ${n}`,
+      `Standard ${n}`,
+    ]);
+
+    const targetStudents = students.filter((student) => {
+      if (!student?.id) return false;
+      if (student.status && student.status !== "active") return false;
+      const cls = student.currentClass || "";
+      return classLabels.some((label) => classTokensMatch(cls, label));
+    });
+
+    if (targetStudents.length === 0) {
+      return {
+        studentsMatched: 0,
+        unpaidDeleted: 0,
+        newAdmissions: 0,
+        continuing: 0,
+        tuitionIssued: 0,
+        ayFeesIssued: 0,
+        classes: classNumbers,
+        academicYear,
+      };
+    }
+
+    const targetIds = new Set(targetStudents.map((s) => s.id));
+    const unpaidToDelete = allIssued.filter((fee) => {
+      if (!targetIds.has(fee.studentId)) return false;
+      const paid = Number(fee.paidAmount) || 0;
+      return paid <= 0 && fee.status !== "paid" && fee.status !== "partial";
+    });
+
+    const chunkSize = 40;
+    for (let i = 0; i < unpaidToDelete.length; i += chunkSize) {
+      const chunk = unpaidToDelete.slice(i, i + chunkSize);
+      await Promise.all(
+        chunk.map((fee) =>
+          mutate({
+            action: "delete",
+            path: `feeIssued/${fee.id}`,
+            actionBy: "admin",
+          }),
+        ),
+      );
+    }
+
+    const ayFeeConfigs = configs.filter(isAcademicYearFeeConfig);
+    const nowISO = new Date().toISOString();
+    let newAdmissions = 0;
+    let continuing = 0;
+
+    for (const student of targetStudents) {
+      const assigned = assignAdmissionReadmissionAndBooks({
+        student,
+        configs,
+        academicYear,
+        throughDate,
+      });
+      if (assigned.isNewThisAy) newAdmissions += 1;
+      else continuing += 1;
+
+      await mutate({
+        action: "update",
+        path: `students/${student.id}`,
+        data: {
+          excludedFeeConfigIds: assigned.excludedFeeConfigIds,
+          optionalFeeIds: assigned.optionalFeeIds,
+          optionalFeeAmounts: assigned.optionalFeeAmounts,
+          updatedAt: nowISO,
+        },
+        actionBy: "admin",
+      });
+
+      // Continuing: re-admission covers April — drop unpaid April tuition.
+      if (!assigned.isNewThisAy) {
+        await this.deleteUnpaidAprilTuitionForStudent(
+          student.id,
+          configs,
+          throughDate,
+        );
+      }
+    }
+
+    const catchUp = await this.catchUpAllMandatoryFees(throughDate);
+    let ayIssued = 0;
+    for (const cfg of ayFeeConfigs) {
+      try {
+        const result = await this.issueFeesForConfigThroughDate(
+          cfg.id,
+          throughDate,
+        );
+        ayIssued += result.created;
+      } catch (error) {
+        console.error(`Reissue failed for ${cfg.name}`, error);
+      }
+    }
+
+    return {
+      studentsMatched: targetStudents.length,
+      unpaidDeleted: unpaidToDelete.length,
+      newAdmissions,
+      continuing,
+      tuitionIssued: catchUp.created,
+      ayFeesIssued: ayIssued,
+      classes: classNumbers,
+      academicYear,
+    };
   },
 
   /**
@@ -1090,20 +1522,6 @@ export const feeService = {
     }
 
     const academicYear = getAcademicYearForDate(throughDate);
-    const { start: ayStart } = getAcademicYearRange(academicYear);
-    const admissionCfg = findSelectableFeeConfig(configs, "admission", throughDate);
-    const readmissionCfg = findSelectableFeeConfig(
-      configs,
-      "readmission",
-      throughDate,
-    );
-    const uniformCfg = findSelectableFeeConfig(configs, "uniform", throughDate);
-    const transportCfg = findSelectableFeeConfig(
-      configs,
-      "transport",
-      throughDate,
-    );
-
     const ayFeeConfigs = configs.filter(isAcademicYearFeeConfig);
     const nowISO = new Date().toISOString();
     let newAdmissions = 0;
@@ -1113,55 +1531,23 @@ export const feeService = {
       if (!student?.id) continue;
       if (student.status && student.status !== "active") continue;
 
-      const admissionDate = student.admissionDate
-        ? new Date(student.admissionDate)
-        : null;
-      const isNewThisAy = Boolean(
-        admissionDate &&
-          !Number.isNaN(admissionDate.getTime()) &&
-          admissionDate >= ayStart,
-      );
-
-      if (isNewThisAy) newAdmissions += 1;
+      const assigned = assignAdmissionReadmissionAndBooks({
+        student,
+        configs,
+        academicYear,
+        throughDate,
+        resetExclusions: true,
+      });
+      if (assigned.isNewThisAy) newAdmissions += 1;
       else continuing += 1;
-
-      const excluded = new Set<string>();
-      if (isNewThisAy) {
-        if (readmissionCfg) excluded.add(readmissionCfg.id);
-      } else {
-        if (admissionCfg) excluded.add(admissionCfg.id);
-      }
-
-      const optionalIds = new Set(student.optionalFeeIds || []);
-      const optionalAmounts: Record<string, number> = {
-        ...(student.optionalFeeAmounts || {}),
-      };
-
-      // Auto-assign optional AY / selectable fees so they get issued; admin can exclude later.
-      for (const cfg of [uniformCfg, transportCfg, ...ayFeeConfigs]) {
-        if (!cfg || !cfg.isOptional) continue;
-        if (excluded.has(cfg.id)) continue;
-        if (isNewThisAy && configMatchesSelectableKind(cfg, "readmission")) {
-          continue;
-        }
-        if (!isNewThisAy && configMatchesSelectableKind(cfg, "admission")) {
-          continue;
-        }
-        optionalIds.add(cfg.id);
-        if (optionalAmounts[cfg.id] == null) {
-          const classKey = student.currentClass || "unassigned";
-          optionalAmounts[cfg.id] =
-            Number(cfg.classFees?.[classKey] || 0) || 0;
-        }
-      }
 
       await mutate({
         action: "update",
         path: `students/${student.id}`,
         data: {
-          excludedFeeConfigIds: [...excluded],
-          optionalFeeIds: [...optionalIds],
-          optionalFeeAmounts: optionalAmounts,
+          excludedFeeConfigIds: assigned.excludedFeeConfigIds,
+          optionalFeeIds: assigned.optionalFeeIds,
+          optionalFeeAmounts: assigned.optionalFeeAmounts,
           updatedAt: nowISO,
         },
         actionBy: "admin",
@@ -1169,6 +1555,9 @@ export const feeService = {
     }
 
     // Issue mandatory (tuition etc.) then once-per-AY fees.
+    // Continuing: re-admission in April, monthly tuition from May.
+    // New: admission fee, tuition from admission month.
+    // Books & copies: mandatory for everyone.
     const catchUp = await this.catchUpAllMandatoryFees(throughDate);
     let ayIssued = 0;
     for (const cfg of ayFeeConfigs) {

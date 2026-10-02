@@ -7,8 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import { schoolLetterheadDefaults } from "@/lib/config/school-letterhead";
 import type { FeePayment } from "@/lib/types/fee-payment.type";
+import type { IdCardSettings } from "@/lib/types/id-card-settings.type";
 import { formatCurrency } from "@/lib/utils";
 import { amountInWordsInr } from "@/lib/utils/amount-in-words";
 import { buildReceiptParticularRows } from "@/lib/utils/fee-receipt-particulars";
@@ -35,6 +37,13 @@ export function FeeReceiptDialog({
   onOpenChange,
 }: FeeReceiptDialogProps) {
   const receiptRef = useRef<HTMLDivElement>(null);
+  const { data: idCardSettingsData } = useFirebaseRealtime<IdCardSettings>(
+    "settings/idCard",
+    { asArray: false },
+  );
+  const principalSignatureUrl =
+    (idCardSettingsData as IdCardSettings | null)?.principalSignatureUrl?.trim() ||
+    "";
 
   const rows = useMemo(() => {
     if (!payment) return [];
@@ -85,6 +94,7 @@ export function FeeReceiptDialog({
         scale: 2,
         backgroundColor: "#ffffff",
         logging: false,
+        useCORS: true,
       });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -241,10 +251,19 @@ export function FeeReceiptDialog({
                     <div className="text-sm font-semibold">{session}</div>
                   </div>
 
-                  <div className="text-right min-w-[140px]">
-                    <div className="h-10" />
-                    <div className="text-[11px] font-semibold border-t border-black pt-1">
-                      Authorised Representatives
+                  <div className="flex flex-col items-center min-w-[140px]">
+                    {principalSignatureUrl ? (
+                      <img
+                        src={principalSignatureUrl}
+                        alt="Principal signature"
+                        crossOrigin="anonymous"
+                        className="h-12 w-[120px] object-contain object-bottom"
+                      />
+                    ) : (
+                      <div className="h-12 w-[120px] border-b border-dotted border-gray-600" />
+                    )}
+                    <div className="text-[11px] font-semibold border-t border-black pt-1 mt-1 w-full text-center">
+                      Principal
                     </div>
                   </div>
                 </div>

@@ -1,6 +1,7 @@
 import type { CashBookEntry } from "@/lib/types/cash-book.type";
 import type { FeeConfiguration, FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
+import { resolveClassFeeAmount } from "@/lib/utils/class-section-match";
 import { getAcademicYearForDate } from "@/lib/utils/fee-dues";
 
 export type FeeReferenceKind = "pending" | "structure" | "issued";
@@ -186,15 +187,15 @@ function structureAmountForStudent(
   if ((student.excludedFeeConfigIds || []).includes(config.id)) {
     return 0;
   }
-  // Per-student override wins over structure class fee.
-  if (student.optionalFeeAmounts?.[config.id] != null) {
-    return Number(student.optionalFeeAmounts[config.id]) || 0;
+  const classAmount = resolveClassFeeAmount(
+    config.classFees,
+    student.currentClass,
+  );
+  const raw = student.optionalFeeAmounts?.[config.id];
+  if (raw != null && Number(raw) > 0) {
+    return Number(raw);
   }
-  const classKey = student.currentClass || "";
-  if (classKey && config.classFees?.[classKey] != null) {
-    return Number(config.classFees[classKey]) || 0;
-  }
-  return 0;
+  return classAmount;
 }
 
 function alreadyPaidInCashBook(params: {

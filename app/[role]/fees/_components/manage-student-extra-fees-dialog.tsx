@@ -30,6 +30,10 @@ import {
   resolveSelectableFeeAmount,
   type SelectableFeeKind,
 } from "@/lib/utils/student-selectable-fees";
+import {
+  getCurrentAcademicYear,
+  isNewAdmissionInAcademicYear,
+} from "@/lib/utils/student-rte";
 
 interface ManageStudentExtraFeesDialogProps {
   student: Student | null;
@@ -60,26 +64,37 @@ export function ManageStudentExtraFeesDialog({
 
   useEffect(() => {
     if (!open || !student) return;
+    const academicYear = getCurrentAcademicYear();
+    const isNewThisAy = isNewAdmissionInAcademicYear(student, academicYear);
+    const preferred: "admission" | "readmission" = isNewThisAy
+      ? "admission"
+      : "readmission";
+
     const initial = SELECTABLE_FEE_KINDS.map((kind) => {
       const config = findSelectableFeeConfig(configs, kind);
-      const included = config
+      let included = config
         ? isSelectableFeeIncluded(student, config)
         : false;
+      // Default either/or when neither side is set yet.
+      if (config && kind === "admission" && !included && isNewThisAy) {
+        const readCfg = findSelectableFeeConfig(configs, "readmission");
+        const readOn = readCfg
+          ? isSelectableFeeIncluded(student, readCfg)
+          : false;
+        if (!readOn) included = true;
+      }
+      if (config && kind === "readmission" && !included && !isNewThisAy) {
+        const admCfg = findSelectableFeeConfig(configs, "admission");
+        const admOn = admCfg
+          ? isSelectableFeeIncluded(student, admCfg)
+          : false;
+        if (!admOn) included = true;
+      }
       const amount = config ? resolveSelectableFeeAmount(student, config) : 0;
       return { kind, config, included, amount };
     });
 
-    // Prefer whichever side is already on; default to admission if both.
-    const preferReadmission =
-      initial.some((r) => r.kind === "readmission" && r.included) &&
-      !initial.some((r) => r.kind === "admission" && r.included);
-
-    setRows(
-      enforceAdmissionReadmissionExclusivity(
-        initial,
-        preferReadmission ? "readmission" : "admission",
-      ),
-    );
+    setRows(enforceAdmissionReadmissionExclusivity(initial, preferred));
   }, [open, student, configs]);
 
   const hasAnyConfig = useMemo(
@@ -106,7 +121,12 @@ export function ManageStudentExtraFeesDialog({
     if (!student) return;
     setSaving(true);
     try {
-      const safeRows = enforceAdmissionReadmissionExclusivity(rows);
+      const academicYear = getCurrentAcademicYear();
+      const preferred: "admission" | "readmission" =
+        isNewAdmissionInAcademicYear(student, academicYear)
+          ? "admission"
+          : "readmission";
+      const safeRows = enforceAdmissionReadmissionExclusivity(rows, preferred);
       const inclusions: Record<string, boolean> = {};
       const amounts: Record<string, number> = {};
 
@@ -151,9 +171,9 @@ export function ManageStudentExtraFeesDialog({
           <DialogDescription>
             Include or exclude these fees for{" "}
             <strong>{student?.fullName}</strong>. Admission and re-admission are
-            mutually exclusive. Re-admission, uniform, and books/copies are
-            billed once per academic year (April). Re-admission includes April
-            tuition — monthly tuition starts from May.
+            either/or — only one applies. Re-admission is billed in April and
+            covers April tuition; monthly tuition then starts from May. Books
+            &amp; copies are mandatory each year.
           </DialogDescription>
         </DialogHeader>
 
@@ -216,8 +236,8 @@ export function ManageStudentExtraFeesDialog({
                       row.kind === "readmission") && (
                       <p className="text-[11px] text-muted-foreground mt-1">
                         {row.kind === "readmission"
-                          ? "Includes April tuition. Tuition bills start from May."
-                          : "Selecting this clears re-admission (and vice versa)."}
+                          ? "Either/or with admission. Billed in April (covers April tuition). Tuition from May."
+                          : "Either/or with re-admission. Selecting this clears re-admission."}
                       </p>
                     )}
                   </div>

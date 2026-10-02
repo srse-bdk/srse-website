@@ -24,6 +24,8 @@ import type { FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
 import { feeService } from "@/lib/services/fee.service";
 import { formatCurrency } from "@/lib/utils";
+import { filterApplicableFeesForStudent } from "@/lib/utils/fee-bill-rules";
+import type { FeeConfiguration } from "@/lib/types/fee.type";
 import { format, isValid } from "date-fns";
 import {
   Banknote,
@@ -80,20 +82,23 @@ export function StudentFeeDetailsDialog({
       asArray: true,
     },
   );
+  const { data: feeConfigsData } = useFirebaseRealtime<FeeConfiguration>(
+    "feeConfigurations",
+    { asArray: true },
+  );
   const fees = (issuedFeesData as FeeRecord[]) || [];
   const payments = (feePaymentsData as FeePayment[]) || [];
+  const feeConfigs = (feeConfigsData as FeeConfiguration[]) || [];
 
-  const studentFees = useMemo(
-    () =>
-      fees
-        .filter((f) => f.studentId === student?.id)
-        .sort(
-          (a, b) =>
-            new Date(a.dueDate || 0).getTime() -
-            new Date(b.dueDate || 0).getTime(),
-        ),
-    [fees, student?.id],
-  );
+  const studentFees = useMemo(() => {
+    if (!student) return [];
+    const raw = fees.filter((f) => f.studentId === student.id);
+    return filterApplicableFeesForStudent(raw, student, feeConfigs).sort(
+      (a, b) =>
+        new Date(a.dueDate || 0).getTime() -
+        new Date(b.dueDate || 0).getTime(),
+    );
+  }, [fees, student, feeConfigs]);
 
   const studentPayments = useMemo(
     () =>

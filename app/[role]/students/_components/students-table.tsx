@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -34,6 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { studentService } from "@/lib/services/student.service";
 import type { Student } from "@/lib/types/student.type";
 import {
   formatClassSectionDisplay,
@@ -104,29 +106,39 @@ export function StudentsTable({ students }: StudentsTableProps) {
   const params = useParams();
   const role = params.role as string;
   const [searchTerm, setSearchTerm] = useState("");
+  const [rteFilter, setRteFilter] = useState<"all" | "rte" | "non_rte">("all");
   const [sortMode, setSortMode] = useState<StudentListSortMode>("roll");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [rteSavingId, setRteSavingId] = useState<string | null>(null);
 
-  // Filter students based on search term
   const filteredStudents = useMemo(() => {
-    const filtered = students.filter(
-      (student) =>
-        student.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.scanId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.admissionNumber
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        student.rollNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.phone?.includes(searchTerm),
-    );
+    const q = searchTerm.toLowerCase();
+    const filtered = students.filter((student) => {
+      if (rteFilter === "rte" && !student.isRte) return false;
+      if (rteFilter === "non_rte" && student.isRte) return false;
+      if (!q) return true;
+      return (
+        student.fullName?.toLowerCase().includes(q) ||
+        student.scanId?.toLowerCase().includes(q) ||
+        student.admissionNumber?.toLowerCase().includes(q) ||
+        student.pen?.toLowerCase().includes(q) ||
+        student.rollNumber?.toLowerCase().includes(q) ||
+        student.email?.toLowerCase().includes(q) ||
+        student.phone?.includes(searchTerm)
+      );
+    });
 
     return sortStudentsByClassSection(filtered, sortMode);
-  }, [students, searchTerm, sortMode]);
+  }, [students, searchTerm, sortMode, rteFilter]);
+
+  const rteCount = useMemo(
+    () => students.filter((s) => s.isRte).length,
+    [students],
+  );
 
   const activeStudentsMissingRoll = useMemo(() => {
     return students.filter(
@@ -138,6 +150,25 @@ export function StudentsTable({ students }: StudentsTableProps) {
     ).length;
   }, [students]);
 
+  const toggleRte = async (student: Student, isRte: boolean) => {
+    setRteSavingId(student.id);
+    try {
+      await studentService.update(student.id, { isRte });
+      toast.success(
+        isRte
+          ? `${student.fullName} marked as RTE`
+          : `${student.fullName} unmarked as RTE`,
+      );
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to update RTE",
+      );
+    } finally {
+      setRteSavingId(null);
+    }
+  };
+
   const openDeleteDialog = (student: Student) => {
     setSelectedStudent(student);
     setDeleteDialogOpen(true);
@@ -145,15 +176,12 @@ export function StudentsTable({ students }: StudentsTableProps) {
 
   const handleDialogSuccess = () => {
     setSelectedStudent(null);
-    // Real-time hook will automatically update the data
   };
 
   const handleBulkDeleteSuccess = () => {
     setSelectedIds([]);
-    // Real-time hook will automatically update the data
   };
 
-  // Bulk selection functions
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedIds(filteredStudents.map((s) => s.id));
@@ -205,11 +233,28 @@ export function StudentsTable({ students }: StudentsTableProps) {
           <div className="relative w-full flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
             <Input
-              placeholder="Search by name, scan ID, roll, admission, email, or phone..."
+              placeholder="Search by name, PEN, scan ID, roll, email, or phone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 pr-4 h-11 text-sm sm:text-base border-border/50 bg-background/50 focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/50 transition-all duration-200"
             />
+          </div>
+          <div className="flex items-center gap-2 sm:w-[150px] shrink-0">
+            <Select
+              value={rteFilter}
+              onValueChange={(value) =>
+                setRteFilter(value as "all" | "rte" | "non_rte")
+              }
+            >
+              <SelectTrigger className="h-11 w-full" aria-label="RTE filter">
+                <SelectValue placeholder="RTE" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All students</SelectItem>
+                <SelectItem value="rte">RTE only ({rteCount})</SelectItem>
+                <SelectItem value="non_rte">Non-RTE</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center gap-2 sm:w-[220px] shrink-0">
             <Select
@@ -391,6 +436,7 @@ export function StudentsTable({ students }: StudentsTableProps) {
                       <TableHead>PEN</TableHead>
                       <TableHead>DoB</TableHead>
                       <TableHead>Parent</TableHead>
+                      <TableHead className="text-center">RTE</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="w-[70px]">Actions</TableHead>
                     </TableRow>
@@ -435,6 +481,25 @@ export function StudentsTable({ students }: StudentsTableProps) {
                           </div>
                         </TableCell>
                         <TableCell>{renderContactNumCell(student)}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col items-center gap-1">
+                            <Switch
+                              checked={Boolean(student.isRte)}
+                              disabled={rteSavingId === student.id}
+                              onCheckedChange={(checked) =>
+                                toggleRte(student, checked)
+                              }
+                            />
+                            {student.isRte ? (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px]"
+                              >
+                                RTE
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </TableCell>
                         <TableCell>{getStatusBadge(student.status)}</TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -517,8 +582,20 @@ export function StudentsTable({ students }: StudentsTableProps) {
                             </div>
                           </div>
                           <div className="text-xs">{renderContactNumCell(student)}</div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {getStatusBadge(student.status)}
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-muted-foreground">
+                                RTE
+                              </span>
+                              <Switch
+                                checked={Boolean(student.isRte)}
+                                disabled={rteSavingId === student.id}
+                                onCheckedChange={(checked) =>
+                                  toggleRte(student, checked)
+                                }
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>

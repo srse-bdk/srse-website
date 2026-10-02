@@ -128,13 +128,16 @@ export default function FeeStructurePage() {
   const handleCatchUp = async (config: FeeConfiguration) => {
     setIssuingConfigId(config.id);
     try {
-      const result = await feeService.issueFeesForConfigThroughDate(
+      const result = await feeService.catchUpConfigThroughDate(
         config.id,
         new Date(),
       );
       if (result.created > 0) {
         toast.success(
-          `Caught up ${result.created} ${config.name} bill${result.created === 1 ? "" : "s"} through this month`,
+          `Caught up ${result.created} bill${result.created === 1 ? "" : "s"}` +
+            (result.continuing != null
+              ? ` (${result.newAdmissions} new / ${result.continuing} re-admission)`
+              : ` for ${config.name}`),
         );
       } else {
         toast.info(
@@ -155,10 +158,12 @@ export default function FeeStructurePage() {
       const result = await feeService.catchUpAllMandatoryFees(new Date());
       if (result.created > 0) {
         toast.success(
-          `Caught up ${result.created} missing fee bill${result.created === 1 ? "" : "s"}`,
+          `Caught up ${result.created} bill${result.created === 1 ? "" : "s"} — ${result.newAdmissions} new admission, ${result.continuing} re-admission`,
         );
       } else {
-        toast.info("All mandatory fees are already up to date");
+        toast.info(
+          `Fees up to date (${result.newAdmissions} new / ${result.continuing} re-admission students synced)`,
+        );
       }
     } catch (error) {
       console.error(error);
@@ -219,8 +224,9 @@ export default function FeeStructurePage() {
             Fee List
           </CardTitle>
           <CardDescription>
-            Catch up creates any missing monthly/period bills through this
-            month.
+            Catch up syncs admission vs re-admission (either/or), issues Books
+            &amp; Copies for everyone, and bills tuition from May for
+            re-admission students. Creates any missing bills through this month.
           </CardDescription>
         </CardHeader>
         <CardContent>

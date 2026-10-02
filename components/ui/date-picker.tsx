@@ -8,69 +8,73 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  parseCalendarDate,
+  toCalendarDateInputValue,
+} from "@/lib/utils/fee-dues";
 
 export interface DatePickerProps {
-    value?: string | Date;
-    onChange?: (value: string) => void;
-    onSelect?: (date: Date | undefined) => void;
-    placeholder?: string;
-    className?: string;
-    disabled?: boolean;
+  value?: string | Date;
+  onChange?: (value: string) => void;
+  onSelect?: (date: Date | undefined) => void;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
 }
 
 export function DatePicker({
-    value,
-    onChange,
-    onSelect,
-    placeholder = "Pick a date",
-    className,
-    disabled,
+  value,
+  onChange,
+  onSelect,
+  placeholder = "Pick a date",
+  className,
+  disabled,
 }: DatePickerProps) {
-    const date = React.useMemo(() => {
-        if (!value) return undefined;
-        const d = new Date(value);
-        return isNaN(d.getTime()) ? undefined : d;
-    }, [value]);
+  const date = React.useMemo(() => parseCalendarDate(value), [value]);
 
-    return (
-        <Popover>
-            <PopoverTrigger asChild>
-                <Button
-                    variant={"outline"}
-                    className={cn(
-                        "w-full justify-start text-left font-normal px-3",
-                        !date && "text-muted-foreground",
-                        className
-                    )}
-                    disabled={disabled}
-                >
-                    <CalendarIcon className="mr-2 h-4 w-4 opacity-70" />
-                    {date ? format(date, "PPP") : <span>{placeholder}</span>}
-                </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={(selectedDate) => {
-                        if (onChange) {
-                            onChange(selectedDate ? selectedDate.toISOString() : "");
-                        }
-                        if (onSelect) {
-                            onSelect(selectedDate);
-                        }
-                    }}
-                    disabled={disabled}
-                    initialFocus
-                    captionLayout="dropdown"
-                    fromYear={1900}
-                    toYear={new Date().getFullYear() + 20}
-                />
-            </PopoverContent>
-        </Popover>
-    );
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant={"outline"}
+          className={cn(
+            "w-full justify-start text-left font-normal px-3",
+            !date && "text-muted-foreground",
+            className,
+          )}
+          disabled={disabled}
+        >
+          <CalendarIcon className="mr-2 h-4 w-4 opacity-70" />
+          {date ? format(date, "dd/MM/yyyy") : <span>{placeholder}</span>}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={date}
+          defaultMonth={date}
+          onSelect={(selectedDate) => {
+            if (onChange) {
+              // Persist calendar day only — avoids UTC shifting the day.
+              onChange(
+                selectedDate ? toCalendarDateInputValue(selectedDate) : "",
+              );
+            }
+            if (onSelect) {
+              onSelect(selectedDate);
+            }
+          }}
+          disabled={disabled}
+          initialFocus
+          captionLayout="dropdown"
+          fromYear={1900}
+          toYear={new Date().getFullYear() + 20}
+        />
+      </PopoverContent>
+    </Popover>
+  );
 }

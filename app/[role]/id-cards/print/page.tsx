@@ -34,7 +34,6 @@ import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import { staffService, studentService } from "@/lib/services";
 import {
   DEFAULT_ACADEMIC_YEAR,
-  getIdCardLayout,
   ID_CARD_PRINT_PAGE_STYLE,
   type IdCardOrientation,
 } from "@/lib/config/id-card";
@@ -49,12 +48,14 @@ import {
   downloadIdCardPagesPdf,
   filterStaffForIdCardPrint,
   filterStudentsForIdCardPrint,
+  getIdCardCardsPerSheet,
   getIdCardPrintFilterStats,
   getPrintableStaff,
   getPrintableStudents,
   getStudentClassOptions,
   getStudentSectionOptions,
   type IdCardPrintFilterOptions,
+  type IdCardSheetDensity,
 } from "@/lib/utils/id-card-print";
 import {
   ID_CARD_SAMPLE_STAFF,
@@ -84,6 +85,8 @@ export default function IdCardPrintPage() {
   const [isMarkingPrinted, setIsMarkingPrinted] = useState(false);
   const [cardOrientation, setCardOrientation] =
     useState<IdCardOrientation>("landscape");
+  const [sheetDensity, setSheetDensity] =
+    useState<IdCardSheetDensity>("full");
 
   const {
     data: studentsData,
@@ -278,16 +281,22 @@ export default function IdCardPrintPage() {
   };
 
   const studentPages = useMemo(
-    () => chunkIdCardPages(filteredStudents, cardOrientation),
-    [filteredStudents, cardOrientation],
+    () => chunkIdCardPages(filteredStudents, cardOrientation, sheetDensity),
+    [filteredStudents, cardOrientation, sheetDensity],
   );
 
   const staffPages = useMemo(
-    () => chunkIdCardPages(filteredStaff, cardOrientation),
-    [filteredStaff, cardOrientation],
+    () => chunkIdCardPages(filteredStaff, cardOrientation, sheetDensity),
+    [filteredStaff, cardOrientation, sheetDensity],
   );
 
-  const cardsPerSheet = getIdCardLayout(cardOrientation).cardsPerPage;
+  const cardsPerSheet = getIdCardCardsPerSheet(
+    cardOrientation,
+    printMode === "single" ? "one" : sheetDensity,
+  );
+
+  const useOneCardPerSheet =
+    printMode === "single" || sheetDensity === "one";
 
   const previewStudent = useMemo(() => {
     if (printMode === "single" && selectedStudentId) {
@@ -407,7 +416,6 @@ export default function IdCardPrintPage() {
     activeTab === "student" ? filteredStudents.length : filteredStaff.length;
   const currentPages =
     activeTab === "student" ? studentPages.length : staffPages.length;
-  const isSingleCard = printMode === "single";
   const isBulk = printMode === "bulk";
   const filterStats =
     activeTab === "student" ? studentFilterStats : staffFilterStats;
@@ -490,13 +498,13 @@ export default function IdCardPrintPage() {
                   <div className="flex items-center gap-2">
                     <RadioGroupItem value="landscape" id="layout-landscape" />
                     <Label htmlFor="layout-landscape" className="font-normal">
-                      Landscape (8 per A4 sheet)
+                      Landscape card (85.6 × 54 mm)
                     </Label>
                   </div>
                   <div className="flex items-center gap-2">
                     <RadioGroupItem value="portrait" id="layout-portrait" />
                     <Label htmlFor="layout-portrait" className="font-normal">
-                      Portrait (9 per A4 sheet)
+                      Portrait card (54 × 85.6 mm)
                     </Label>
                   </div>
                 </RadioGroup>
@@ -523,6 +531,34 @@ export default function IdCardPrintPage() {
                   </div>
                 </RadioGroup>
               </div>
+
+              {printMode === "bulk" ? (
+                <div className="space-y-2">
+                  <Label>Cards per A4 sheet</Label>
+                  <RadioGroup
+                    value={sheetDensity}
+                    onValueChange={(value) =>
+                      setSheetDensity(value as IdCardSheetDensity)
+                    }
+                    className="flex flex-wrap gap-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="full" id="sheet-full" />
+                      <Label htmlFor="sheet-full" className="font-normal">
+                        {cardOrientation === "landscape"
+                          ? "8 per sheet"
+                          : "9 per sheet"}
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="one" id="sheet-one" />
+                      <Label htmlFor="sheet-one" className="font-normal">
+                        1 per sheet (same card size, centered)
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+              ) : null}
 
               <TabsContent value="student" className="mt-0 space-y-4">
                 {printMode === "single" ? (
@@ -754,7 +790,7 @@ export default function IdCardPrintPage() {
             academicYear={academicYear}
             principalSignatureUrl={principalSignatureUrl}
             orientation={cardOrientation}
-            singleCard={isSingleCard}
+            singleCard={useOneCardPerSheet}
           />
         ) : (
           <IdCardPrintPages
@@ -764,7 +800,7 @@ export default function IdCardPrintPage() {
             academicYear={academicYear}
             principalSignatureUrl={principalSignatureUrl}
             orientation={cardOrientation}
-            singleCard={isSingleCard}
+            singleCard={useOneCardPerSheet}
           />
         )}
       </div>

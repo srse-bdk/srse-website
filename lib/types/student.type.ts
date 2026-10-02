@@ -83,6 +83,12 @@ export interface Student extends BaseEntity {
   optionalFeeAmounts?: Record<string, number>; // Fee ID -> Amount
   /** Fee config IDs this student should not be billed for (admission/uniform/transport etc.). */
   excludedFeeConfigIds?: string[];
+  /**
+   * Right to Education (RTE) — school does not collect fees from the family
+   * (new admission or re-admission / continuing). Outstanding bills are
+   * claimable from the government (Fee Management → RTE).
+   */
+  isRte?: boolean;
   pen?: string;
   socialCategory?: string;
   socialCategoryCode?: number;
@@ -118,6 +124,7 @@ export interface StudentInput {
   optionalFeeIds?: string[];
   optionalFeeAmounts?: Record<string, number>;
   excludedFeeConfigIds?: string[];
+  isRte?: boolean;
   /** Null clears an existing PEN on write paths that reuse this shape. */
   pen?: string | null;
   socialCategory?: string;
@@ -153,6 +160,7 @@ export interface StudentUpdateInput {
   optionalFeeIds?: string[];
   optionalFeeAmounts?: Record<string, number>;
   excludedFeeConfigIds?: string[];
+  isRte?: boolean;
   pen?: string | null;
   socialCategory?: string;
   socialCategoryCode?: number;

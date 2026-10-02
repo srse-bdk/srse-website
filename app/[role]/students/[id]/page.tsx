@@ -267,12 +267,12 @@ export default function StudentProfilePage() {
                 </div>
                 <div className="space-y-1">
                   <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                    Admission Date
+                    Admission / Readmission Date
                   </span>
                   <p className="font-medium">
                     {student.admissionDate
                       ? new Date(student.admissionDate).toLocaleDateString()
-                      : "-"}
+                      : "—"}
                   </p>
                 </div>
               </CardContent>

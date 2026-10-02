@@ -6,6 +6,7 @@ import {
   BookOpen,
   BookText,
   Briefcase,
+  Building2,
   Calendar,
   CalendarClock,
   CalendarDays,
@@ -28,6 +29,7 @@ import {
   UserCheck,
   Users,
   Users2Icon,
+  UserPlus,
   Video,
   Wallet,
 } from "lucide-react";
@@ -93,6 +95,7 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     roles: ["admin"],
     subItems: [
       { title: "Students List", url: "/students", icon: List },
+      { title: "New Admissions", url: "/students/new-admissions", icon: UserPlus },
       {
         title: "Class Enrollment",
         url: "/students/enrollment",
@@ -200,6 +203,11 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     subItems: [
       { title: "Dashboard", url: "/fees", icon: Home },
       { title: "Fee Structure", url: "/fees/structure", icon: Settings },
+      {
+        title: "RTE / Govt claim",
+        url: "/fees/rte",
+        icon: Building2,
+      },
       {
         title: "Financial Overview",
         url: "/financial-activities",
@@ -328,6 +336,12 @@ function buildAccountsNavigation(): NavigationItem[] {
       title: "Fee Structure",
       url: "/fees/structure",
       icon: Settings,
+      roles: ["accounts"],
+    },
+    {
+      title: "RTE / Govt claim",
+      url: "/fees/rte",
+      icon: Building2,
       roles: ["accounts"],
     },
     {

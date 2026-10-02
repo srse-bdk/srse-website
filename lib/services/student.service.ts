@@ -7,6 +7,7 @@ import type {
     StudentUpdateInput,
 } from "@/lib/types/student.type";
 import type { User } from "@/lib/types/user.type";
+import { getAcademicYearStartDateISO } from "@/lib/utils/fee-dues";
 import { getStudentLoginEmailFromPen, isValidStudentPen, parsePenFromImport } from "@/lib/utils/student-login";
 import {
   getClassSectionGroupKey,
@@ -147,10 +148,15 @@ class StudentService {
       }
     }
 
+    const admissionDateRaw = data.admissionDate || getAcademicYearStartDateISO();
+    const admissionDate = /^\d{4}-\d{2}-\d{2}$/.test(admissionDateRaw.slice(0, 10))
+      ? `${admissionDateRaw.slice(0, 10)}T12:00:00.000Z`
+      : admissionDateRaw;
+
     const studentData = {
       scanId,
       admissionNumber: data.admissionNumber,
-      admissionDate: data.admissionDate || nowISO, // Use current date if not provided
+      admissionDate,
       firstName: data.firstName,
       lastName: data.lastName,
       fullName,
@@ -170,6 +176,7 @@ class StudentService {
       currentSection: data.currentSection,
       rollNumber: rollNumber || data.rollNumber,
       siblingIds: data.siblingIds || [],
+      isRte: Boolean(data.isRte),
       pen: pen || undefined,
       socialCategory: data.socialCategory,
       socialCategoryCode: data.socialCategoryCode,
@@ -394,6 +401,14 @@ class StudentService {
         const firstName = data.firstName || current.firstName;
         const lastName = data.lastName || current.lastName;
         updateData.fullName = `${firstName} ${lastName}`.trim();
+      }
+    }
+
+    // Normalize admission / readmission calendar dates to stable noon UTC.
+    if (typeof updateData.admissionDate === "string" && updateData.admissionDate) {
+      const ymd = updateData.admissionDate.slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+        updateData.admissionDate = `${ymd}T12:00:00.000Z`;
       }
     }
 

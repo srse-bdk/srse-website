@@ -2,6 +2,10 @@ import { addMonths, endOfMonth, startOfMonth } from "date-fns";
 import type { FeeConfiguration, FeeFrequency, FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
 import {
+  hasClassFeeForStudent,
+  resolveClassFeeAmount,
+} from "@/lib/utils/class-section-match";
+import {
   isTuitionFeeConfig,
   studentHasReadmissionIncluded,
 } from "@/lib/utils/student-selectable-fees";
@@ -25,6 +29,58 @@ export function getAcademicYearRange(academicYear: string) {
     start: new Date(startYear, 3, 1, 0, 0, 0),
     end: new Date(endYear, 2, 31, 23, 59, 59),
   };
+}
+
+/** Calendar date (yyyy-MM-dd) for 1 April of the academic year — no timezone shift. */
+export function getAcademicYearStartDateInputValue(
+  academicYear?: string,
+  asOf = new Date(),
+): string {
+  const ay = academicYear || getAcademicYearForDate(asOf);
+  const startYear = Number.parseInt(ay.split("-")[0] || "", 10);
+  if (!Number.isFinite(startYear)) {
+    const y = asOf.getMonth() < 3 ? asOf.getFullYear() - 1 : asOf.getFullYear();
+    return `${y}-04-01`;
+  }
+  return `${startYear}-04-01`;
+}
+
+/**
+ * Stable ISO for storage: 1 April noon UTC of the AY start year
+ * (same calendar day in India and most timezones).
+ */
+export function getAcademicYearStartDateISO(
+  academicYear?: string,
+  asOf = new Date(),
+): string {
+  return `${getAcademicYearStartDateInputValue(academicYear, asOf)}T12:00:00.000Z`;
+}
+
+/** Parse yyyy-MM-dd or ISO into a local Date at local noon (avoids UTC day shift). */
+export function parseCalendarDate(value?: string | Date | null): Date | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value;
+  }
+  const raw = String(value).trim();
+  const ymd = raw.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    const [y, m, d] = ymd.split("-").map((part) => Number.parseInt(part, 10));
+    const local = new Date(y, m - 1, d, 12, 0, 0, 0);
+    return Number.isNaN(local.getTime()) ? undefined : local;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+/** Format a Date / ISO as yyyy-MM-dd in local calendar. */
+export function toCalendarDateInputValue(value?: string | Date | null): string {
+  const date = parseCalendarDate(value);
+  if (!date) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function getCycleStep(cycle: FeeFrequency) {
@@ -109,16 +165,27 @@ export function calculateStudentDueFromStructure(params: {
     (cfg) =>
       !cfg.isOptional &&
       cfg.academicYear === academicYear &&
-      cfg.classFees?.[classKey] !== undefined &&
+      hasClassFeeForStudent(cfg.classFees, classKey) &&
       !(student.excludedFeeConfigIds || []).includes(cfg.id),
   );
 
   const hasReadmission = studentHasReadmissionIncluded(student, feeConfigs);
+  // Continuing (not new this AY): April tuition covered by re-admission.
+  const isContinuing =
+    !student.admissionDate ||
+    (() => {
+      const admission = parseCalendarDate(
+        toCalendarDateInputValue(student.admissionDate),
+      );
+      if (!admission) return true;
+      const { start, end } = getAcademicYearRange(academicYear);
+      return !(admission >= start && admission <= end);
+    })();
 
   const expectedMandatoryDue = mandatoryConfigs.reduce((sum, cfg) => {
-    const amount = Number(cfg.classFees[classKey]) || 0;
+    const amount = resolveClassFeeAmount(cfg.classFees, classKey);
     const skipApril =
-      hasReadmission &&
+      (hasReadmission || isContinuing) &&
       cfg.cycle === "monthly" &&
       isTuitionFeeConfig(cfg);
     const occurrences = getOccurrencesInRange(

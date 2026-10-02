@@ -17,8 +17,7 @@ interface AnnualIncrementLetterPreviewProps {
 }
 
 const DEFAULT_SUBJECT = "Annual Increment Letter";
-export const COMPENSATION_PACKAGE_SUBJECT =
-  "Revised Compensation and Terms of Employment";
+export const COMPENSATION_PACKAGE_SUBJECT = DEFAULT_SUBJECT;
 
 export const AnnualIncrementLetterPreview = forwardRef<
   HTMLDivElement,
@@ -51,33 +50,31 @@ export const AnnualIncrementLetterPreview = forwardRef<
           your salary has been adjusted as part of our annual increment process.
         </p>
 
-        <ul className="list-disc space-y-2 pl-6">
-          <li>
-            You will receive a monthly consolidated salary of{" "}
-            <strong>{formatSalaryInr(data.revisedSalary)}</strong> effective from{" "}
-            <strong>{effectiveDate || "________"}</strong>.
-          </li>
-          {data.includeRetentionBonus && data.retentionBonusAmount ? (
-            <li>
-              Furthermore, you are eligible for an annual retention bonus of{" "}
-              <strong>{formatSalaryInr(data.retentionBonusAmount)}</strong>
-              {data.retentionBonusPayoutNote
-                ? ` (${data.retentionBonusPayoutNote})`
-                : null}
-              .
-            </li>
-          ) : null}
-        </ul>
+        <p>
+          You will receive a monthly consolidated salary of{" "}
+          {formatSalaryInr(data.revisedSalary)} effective from{" "}
+          {effectiveDate || "________"}.
+        </p>
+
+        {data.includeRetentionBonus && data.retentionBonusAmount ? (
+          <p>
+            Furthermore, you are eligible for an annual retention bonus of{" "}
+            {formatSalaryInr(data.retentionBonusAmount)}
+            {data.retentionBonusPayoutNote
+              ? ` (${data.retentionBonusPayoutNote})`
+              : null}
+            . This retention amount shall be applicable only after completion
+            of the period mentioned herein.
+          </p>
+        ) : null}
 
         <p>
-          We request you to treat your remuneration details as{" "}
-          <strong>confidential</strong> and not discuss them with colleagues or
-          external parties.
+          We request you to treat your remuneration details as confidential and
+          not discuss them with colleagues or external parties.
         </p>
 
         <p>
-          The terms &amp; conditions of your engagement have changed as outlined
-          below.
+          All other terms and conditions of your engagement remain unchanged.
         </p>
 
         <p>

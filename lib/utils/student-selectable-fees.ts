@@ -1,5 +1,6 @@
 import type { FeeConfiguration } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
+import { resolveClassFeeAmount } from "@/lib/utils/class-section-match";
 import { getAcademicYearForDate } from "@/lib/utils/fee-dues";
 
 export type SelectableFeeKind =
@@ -117,12 +118,16 @@ export function resolveSelectableFeeAmount(
   student: Student,
   config: FeeConfiguration,
 ): number {
-  // Per-student override wins whether the structure fee is optional or not.
-  if (student.optionalFeeAmounts?.[config.id] != null) {
-    return Number(student.optionalFeeAmounts[config.id]) || 0;
+  const classAmount = resolveClassFeeAmount(
+    config.classFees,
+    student.currentClass || "unassigned",
+  );
+  const raw = student.optionalFeeAmounts?.[config.id];
+  // Positive per-student override wins; 0/missing falls back to structure.
+  if (raw != null && Number(raw) > 0) {
+    return Number(raw);
   }
-  const classKey = student.currentClass || "unassigned";
-  return Number(config.classFees?.[classKey] || 0);
+  return classAmount;
 }
 
 export function isTuitionFeeConfig(config: FeeConfiguration): boolean {
@@ -159,15 +164,21 @@ function isBooksOrCopiesName(name: string) {
   return false;
 }
 
+/** Books & copies — mandatory once every academic year. */
+export function isBooksOrCopiesFeeConfig(config: FeeConfiguration): boolean {
+  return isBooksOrCopiesName(config.name);
+}
+
 /**
  * Fees billed once per academic year (April), regardless of configured cycle.
  * Includes admission, re-admission, uniform, books & copies.
+ * Re-admission is billed in April; monthly tuition for those students starts May.
  */
 export function isAcademicYearFeeConfig(config: FeeConfiguration): boolean {
   if (configMatchesSelectableKind(config, "admission")) return true;
   if (configMatchesSelectableKind(config, "readmission")) return true;
   if (configMatchesSelectableKind(config, "uniform")) return true;
-  if (isBooksOrCopiesName(config.name)) return true;
+  if (isBooksOrCopiesFeeConfig(config)) return true;
   return false;
 }
 
@@ -186,19 +197,23 @@ export function studentHasReadmissionIncluded(
 }
 
 /**
- * Skip April monthly tuition when the student has re-admission
- * (re-admission fee already includes April tuition).
+ * Skip April monthly tuition when re-admission applies.
+ * Continuing (non-new) students: April is covered by the April re-admission fee;
+ * monthly tuition bills start from May. Also skips if re-admission is included.
  */
 export function shouldSkipTuitionPeriodForReadmission(params: {
   student: Student;
   config: FeeConfiguration;
   issueDate: Date;
   configs: FeeConfiguration[];
+  /** When true, treat as continuing (not a new admission this AY). */
+  isContinuingStudent?: boolean;
 }): boolean {
-  const { student, config, issueDate, configs } = params;
+  const { student, config, issueDate, configs, isContinuingStudent } = params;
   if (config.cycle !== "monthly") return false;
   if (!isTuitionFeeConfig(config)) return false;
   if (!isAprilMonth(issueDate)) return false;
+  if (isContinuingStudent) return true;
   return studentHasReadmissionIncluded(student, configs);
 }
 

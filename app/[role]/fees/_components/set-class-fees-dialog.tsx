@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import { FeeConfiguration } from "@/lib/types/fee.type";
 import { useFirebaseRealtime } from "@/hooks/use-firebase-realtime";
 import { Class } from "@/lib/types/class.type";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { resolveClassFeeAmount } from "@/lib/utils/class-section-match";
 
 interface SetClassFeesDialogProps {
   config: FeeConfiguration;
@@ -31,9 +32,7 @@ export function SetClassFeesDialog({
 }: SetClassFeesDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [classFees, setClassFees] = useState<Record<string, number>>(
-    config.classFees || {},
-  );
+  const [classFees, setClassFees] = useState<Record<string, number>>({});
 
   const { data: classesData, loading: classesLoading } =
     useFirebaseRealtime<Class>("classes", { asArray: true });
@@ -44,11 +43,42 @@ export function SetClassFeesDialog({
     return classes.sort((a, b) => (a.order || 0) - (b.order || 0));
   }, [classes]);
 
+  useEffect(() => {
+    if (!open) return;
+    const next: Record<string, number> = {};
+    for (const cls of filteredClasses) {
+      const exact = config.classFees?.[cls.name];
+      next[cls.name] =
+        exact != null
+          ? Number(exact) || 0
+          : resolveClassFeeAmount(config.classFees, cls.name);
+    }
+    // Keep any unmatched legacy keys so we don't wipe them on save.
+    for (const [key, amount] of Object.entries(config.classFees || {})) {
+      if (next[key] == null) next[key] = Number(amount) || 0;
+    }
+    setClassFees(next);
+  }, [open, config.classFees, filteredClasses]);
+
   async function handleSave() {
     setLoading(true);
     try {
-      await feeService.updateFeeConfig(config.id, { classFees });
-      toast.success("Class-wise fees updated");
+      // Persist under current class names so student.currentClass lookups align.
+      const normalized: Record<string, number> = {};
+      for (const cls of filteredClasses) {
+        normalized[cls.name] = Number(classFees[cls.name]) || 0;
+      }
+      await feeService.updateFeeConfig(config.id, { classFees: normalized });
+      // Re-issue / amount-sync so newly set prices create missing bills.
+      const catchUp = await feeService.catchUpConfigThroughDate(
+        config.id,
+        new Date(),
+      );
+      toast.success(
+        catchUp.created > 0
+          ? `Class fees saved — ${catchUp.created} bill${catchUp.created === 1 ? "" : "s"} caught up`
+          : "Class-wise fees updated",
+      );
       setOpen(false);
       onSuccess?.();
     } catch (error) {

@@ -7,7 +7,7 @@ export const schoolLetterheadDefaults = {
   schoolWebsite: "https://www.srse.rnray.in",
   schoolLogo: "/logo.png",
   signatoryName: "Pankaj Mohanty",
-  signatoryTitle: "Secretary and Trusty, RN Ray Educational Charitable Trust",
+  signatoryTitle: "Secretary and Trusty, R N Ray Educational Charitable Trust",
 } as const;
 
 export const defaultAdditionalRoleText =
