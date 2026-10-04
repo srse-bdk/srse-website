@@ -30,6 +30,7 @@ import {
   resolveSelectableFeeAmount,
   type SelectableFeeKind,
 } from "@/lib/utils/student-selectable-fees";
+import { resolveClassFeeAmount } from "@/lib/utils/class-section-match";
 import {
   getCurrentAcademicYear,
   isNewAdmissionInAcademicYear,
@@ -90,7 +91,23 @@ export function ManageStudentExtraFeesDialog({
           : false;
         if (!admOn) included = true;
       }
-      const amount = config ? resolveSelectableFeeAmount(student, config) : 0;
+      // New admission: uniform mandatory (2 sets). Continuing: optional (off unless set).
+      if (config && kind === "uniform") {
+        if (isNewThisAy) {
+          included = !(student.excludedFeeConfigIds || []).includes(config.id);
+        }
+      }
+      let amount = config ? resolveSelectableFeeAmount(student, config) : 0;
+      if (config && kind === "uniform" && included) {
+        const unit = resolveClassFeeAmount(
+          config.classFees,
+          student.currentClass || "unassigned",
+        );
+        const raw = student.optionalFeeAmounts?.[config.id];
+        if (raw == null || Number(raw) === 0) {
+          amount = isNewThisAy ? unit * 2 : unit;
+        }
+      }
       return { kind, config, included, amount };
     });
 
@@ -171,9 +188,13 @@ export function ManageStudentExtraFeesDialog({
           <DialogDescription>
             Include or exclude these fees for{" "}
             <strong>{student?.fullName}</strong>. Admission and re-admission are
-            either/or — only one applies. Re-admission is billed in April and
-            covers April tuition; monthly tuition then starts from May. Books
-            &amp; copies are mandatory each year.
+            either/or — only one applies. Re-admission (April) covers April
+            tuition; monthly tuition starts from May. Admission covers the
+            admission-month tuition when admitted on/before the 20th; after the
+            20th, that month is not charged and the next month is included.
+            Uniform: new admissions get 2 sets (mandatory); re-admission /
+            continuing get 1 set (optional). Books &amp; copies are mandatory
+            each year.
           </DialogDescription>
         </DialogHeader>
 
@@ -237,14 +258,20 @@ export function ManageStudentExtraFeesDialog({
                       <p className="text-[11px] text-muted-foreground mt-1">
                         {row.kind === "readmission"
                           ? "Either/or with admission. Billed in April (covers April tuition). Tuition from May."
-                          : "Either/or with re-admission. Selecting this clears re-admission."}
+                          : "Either/or with re-admission. On/before 20th: includes that month’s tuition. After 20th: that month not charged; next month included."}
+                      </p>
+                    )}
+                    {row.kind === "uniform" && (
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        New admission: 2 sets mandatory. Re-admission /
+                        continuing: 1 set optional. Amount is the total billed.
                       </p>
                     )}
                   </div>
                   {row.config && row.included && (
                     <div className="w-28 shrink-0">
                       <Label className="text-[10px] text-muted-foreground mb-1 block">
-                        Amount (₹)
+                        {row.kind === "uniform" ? "Total (₹)" : "Amount (₹)"}
                       </Label>
                       <Input
                         type="number"

@@ -1,4 +1,4 @@
-import { addMonths, endOfMonth, startOfMonth } from "date-fns";
+import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
 import type { FeeConfiguration, FeeFrequency, FeeRecord } from "@/lib/types/fee.type";
 import type { Student } from "@/lib/types/student.type";
 import {
@@ -114,6 +114,78 @@ export function getTuitionStartAfterReadmission(academicYear: string) {
   return addMonths(startOfMonth(start), 1); // May
 }
 
+/**
+ * Months with no separate tuition bill for a new admission.
+ * - On/before the 20th: admission month tuition is included in the admission fee.
+ * - After the 20th: admission month tuition is not charged; the following month
+ *   is included in the admission fee.
+ * Returns calendar months (1st of month).
+ */
+export function getTuitionMonthsCoveredByAdmission(
+  admissionDate: Date,
+): Date[] {
+  const monthStart = startOfMonth(admissionDate);
+  const day = admissionDate.getDate();
+  if (day > 20) {
+    return [monthStart, addMonths(monthStart, 1)];
+  }
+  return [monthStart];
+}
+
+/** True when admitted after the 20th (admission-month tuition waived). */
+export function isAdmittedAfterTwentieth(admissionDate: Date): boolean {
+  return admissionDate.getDate() > 20;
+}
+
+/**
+ * Human-readable admission ↔ tuition note for titles/remarks.
+ * After 20th: next month included; admission month not charged.
+ */
+export function describeAdmissionTuitionCoverage(admissionDate: Date): {
+  titleSuffix: string;
+  remarks: string;
+} {
+  const monthStart = startOfMonth(admissionDate);
+  const admissionMonth = format(monthStart, "MMMM");
+  const nextMonth = format(addMonths(monthStart, 1), "MMMM");
+  if (isAdmittedAfterTwentieth(admissionDate)) {
+    return {
+      // Keep title short for table columns; detail goes in remarks.
+      titleSuffix: `includes ${nextMonth} tuition`,
+      remarks: `Includes ${nextMonth} tuition only (admitted after the 20th). ${admissionMonth} tuition is not charged. Monthly tuition starts afterward.`,
+    };
+  }
+  return {
+    titleSuffix: `includes ${admissionMonth} tuition`,
+    remarks: `Includes tuition for ${format(monthStart, "MMMM yyyy")}. Monthly tuition starts the following month.`,
+  };
+}
+
+/**
+ * First month a new-admission student should receive a separate monthly tuition bill.
+ * Null when admission date is missing/invalid.
+ */
+export function getTuitionStartAfterAdmission(student: Student): Date | null {
+  const admission = parseCalendarDate(student.admissionDate);
+  if (!admission) return null;
+  const covered = getTuitionMonthsCoveredByAdmission(admission);
+  const lastCovered = covered[covered.length - 1];
+  return addMonths(lastCovered, 1);
+}
+
+/** True when issueDate's month is covered by the student's admission fee. */
+export function isTuitionMonthCoveredByAdmission(
+  student: Student,
+  issueDate: Date,
+): boolean {
+  const admission = parseCalendarDate(student.admissionDate);
+  if (!admission) return false;
+  const issueMonth = startOfMonth(issueDate).getTime();
+  return getTuitionMonthsCoveredByAdmission(admission).some(
+    (m) => m.getTime() === issueMonth,
+  );
+}
+
 function getOccurrencesInRange(
   cycle: FeeFrequency,
   anchorDate: Date,
@@ -184,13 +256,22 @@ export function calculateStudentDueFromStructure(params: {
 
   const expectedMandatoryDue = mandatoryConfigs.reduce((sum, cfg) => {
     const amount = resolveClassFeeAmount(cfg.classFees, classKey);
+    const isMonthlyTuition =
+      cfg.cycle === "monthly" && isTuitionFeeConfig(cfg);
     const skipApril =
-      (hasReadmission || isContinuing) &&
-      cfg.cycle === "monthly" &&
-      isTuitionFeeConfig(cfg);
+      (hasReadmission || isContinuing) && isMonthlyTuition;
+
+    let effectiveAnchor = anchorDate;
+    if (isMonthlyTuition && !isContinuing) {
+      const afterAdmission = getTuitionStartAfterAdmission(student);
+      if (afterAdmission) effectiveAnchor = afterAdmission;
+    } else if (isMonthlyTuition && (hasReadmission || isContinuing)) {
+      effectiveAnchor = getTuitionStartAfterReadmission(academicYear);
+    }
+
     const occurrences = getOccurrencesInRange(
       cfg.cycle,
-      anchorDate,
+      effectiveAnchor,
       rangeStart,
       rangeEnd,
       { skipApril },

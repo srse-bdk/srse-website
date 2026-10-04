@@ -3,6 +3,7 @@ import type { Student } from "@/lib/types/student.type";
 import {
   getAcademicYearForDate,
   getAcademicYearRange,
+  isTuitionMonthCoveredByAdmission,
 } from "@/lib/utils/fee-dues";
 import {
   configMatchesSelectableKind,
@@ -49,8 +50,9 @@ function isAprilOfAcademicYear(date: Date, academicYear: string) {
  * Whether an issued bill should count toward school totals / student AY totals.
  * Enforces:
  * - Admission XOR re-admission (new → admission only; continuing → re-admission only)
- * - Continuing / re-admission: no April monthly tuition (covered by April re-admission;
- *   tuition counts from May)
+ * - Continuing / re-admission: no April monthly tuition
+ * - New admission: no tuition for months included in the admission fee
+ *   (admission month on/before 20th; after 20th that month waived + next included)
  */
 export function isFeeBillApplicableForStudent(params: {
   fee: FeeRecord;
@@ -75,16 +77,17 @@ export function isFeeBillApplicableForStudent(params: {
   if (feeLooksLikeAdmission(fee, config) && isContinuing) return false;
   if (feeLooksLikeReadmission(fee, config) && isNew) return false;
 
-  if (feeLooksLikeTuition(fee, config) && isContinuing && fee.dueDate) {
+  if (feeLooksLikeTuition(fee, config) && fee.dueDate) {
     const due = new Date(fee.dueDate);
-    if (
-      !Number.isNaN(due.getTime()) &&
-      isAprilOfAcademicYear(due, academicYear)
-    ) {
-      return false;
+    if (!Number.isNaN(due.getTime())) {
+      if (isContinuing && isAprilOfAcademicYear(due, academicYear)) {
+        return false;
+      }
+      if (isNew && isTuitionMonthCoveredByAdmission(student, due)) {
+        return false;
+      }
     }
-    // Period key fallback (e.g. "2026-04")
-    if (fee.issuePeriodKey) {
+    if (isContinuing && fee.issuePeriodKey) {
       const { start } = getAcademicYearRange(academicYear);
       const aprilKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
       if (fee.issuePeriodKey === aprilKey) return false;

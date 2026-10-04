@@ -232,13 +232,21 @@ export function StudentFeeDetailsDialog({
           </DialogHeader>
 
           <div className="space-y-6 mt-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
               <div className="bg-muted/50 p-3 rounded-xl border">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                   Admission No
                 </p>
                 <p className="text-sm font-bold mt-1">
                   {student?.admissionNumber}
+                </p>
+              </div>
+              <div className="bg-muted/50 p-3 rounded-xl border">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Admission Date
+                </p>
+                <p className="text-sm font-bold mt-1">
+                  {safeFormatDate(student?.admissionDate, "dd MMM yyyy")}
                 </p>
               </div>
               <div className="bg-muted/50 p-3 rounded-xl border">
@@ -310,13 +318,18 @@ export function StudentFeeDetailsDialog({
                             className="hover:bg-muted/30 transition-colors"
                           >
                             <TableCell>
-                              <div className="flex flex-col">
-                                <span className="font-bold text-xs sm:text-sm truncate max-w-[180px] sm:max-w-none">
+                              <div className="flex flex-col gap-0.5 min-w-0 max-w-[220px] sm:max-w-[280px]">
+                                <span className="font-bold text-xs sm:text-sm">
                                   {fee.title}
                                 </span>
                                 <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                                   <Tag className="h-2.5 w-2.5" /> {fee.category}
                                 </span>
+                                {fee.remarks ? (
+                                  <span className="text-[10px] text-muted-foreground leading-snug">
+                                    {fee.remarks}
+                                  </span>
+                                ) : null}
                               </div>
                             </TableCell>
                             <TableCell className="text-[10px] sm:text-sm">

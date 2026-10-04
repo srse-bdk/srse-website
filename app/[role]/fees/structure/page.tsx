@@ -36,6 +36,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { configMatchesSelectableKind } from "@/lib/utils/student-selectable-fees";
+
+function allowsClassWideFees(config: FeeConfiguration) {
+  // Uniform needs class defaults even though it is optional per student.
+  // Other optionals (e.g. Transportation) stay per-student only.
+  if (!config.isOptional) return true;
+  return configMatchesSelectableKind(config, "uniform");
+}
 
 export default function FeeStructurePage() {
   const { data: configsData, loading } = useFirebaseRealtime<FeeConfiguration>(
@@ -225,8 +233,10 @@ export default function FeeStructurePage() {
           </CardTitle>
           <CardDescription>
             Catch up syncs admission vs re-admission (either/or), issues Books
-            &amp; Copies for everyone, and bills tuition from May for
-            re-admission students. Creates any missing bills through this month.
+            &amp; Copies for everyone, Uniform (2 sets mandatory for new
+            admissions; 1 set optional for re-admission), and bills tuition from
+            May for re-admission students. AY fee due dates follow admission month
+            for new students. Creates any missing bills through this month.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -272,23 +282,26 @@ export default function FeeStructurePage() {
                         />
                       </TableCell>
                       <TableCell>
-                        {config.isOptional ? (
+                        {allowsClassWideFees(config) ? (
+                          <div className="flex flex-col gap-1">
+                            <SetClassFeesDialog config={config} />
+                            {config.isOptional ? (
+                              <span className="text-[10px] text-muted-foreground">
+                                Class default; can override per student
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
                           <span className="text-muted-foreground text-sm italic">
                             Set per student
                           </span>
-                        ) : (
-                          <SetClassFeesDialog config={config} />
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {config.isOptional ? "—" : billCount}
+                        {allowsClassWideFees(config) ? billCount : "—"}
                       </TableCell>
                       <TableCell>
-                        {config.isOptional ? (
-                          <span className="text-muted-foreground text-sm">
-                            —
-                          </span>
-                        ) : (
+                        {allowsClassWideFees(config) ? (
                           <Button
                             size="sm"
                             variant="outline"
@@ -302,6 +315,10 @@ export default function FeeStructurePage() {
                             )}
                             Through this month
                           </Button>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">
+                            —
+                          </span>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
