@@ -42,7 +42,10 @@ import {
     parseCalendarDate,
 } from "@/lib/utils/fee-dues";
 import { filterApplicableFeesForStudent } from "@/lib/utils/fee-bill-rules";
-import { isStudentRte } from "@/lib/utils/student-rte";
+import {
+  isNewAdmissionInAcademicYear,
+  isStudentRte,
+} from "@/lib/utils/student-rte";
 import {
     CreditCard,
     Download,
@@ -106,6 +109,7 @@ export function FeesTable({
   // Totals respect admission XOR readmission and May tuition for continuing students.
   const studentFeeMap = students.map((student) => {
     const rte = isStudentRte(student);
+    const isNewStudent = isNewAdmissionInAcademicYear(student, academicYear);
     const applicable = filterApplicableFeesForStudent(
       fees,
       student,
@@ -172,6 +176,7 @@ export function FeesTable({
     return {
       student,
       guardian,
+      isNewStudent,
       totalDue,
       totalPaid,
       // School collectable pending is 0 for RTE
@@ -367,10 +372,17 @@ export function FeesTable({
                     className="group hover:bg-muted/50 transition-colors"
                   >
                     <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium">
-                          {item.student.fullName}
-                        </span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-medium">
+                            {item.student.fullName}
+                          </span>
+                          {item.isNewStudent && (
+                            <Badge className="h-5 border-none bg-teal-100 px-1.5 text-[10px] font-medium text-teal-800 hover:bg-teal-100">
+                              New Student
+                            </Badge>
+                          )}
+                        </div>
                         <span className="text-xs text-muted-foreground">
                           {item.student.admissionNumber} • Class{" "}
                           {item.student.currentClass}
