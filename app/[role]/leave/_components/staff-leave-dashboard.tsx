@@ -108,6 +108,7 @@ export function StaffLeaveDashboard() {
           staffId,
           academicYear,
           staffId,
+          user?.dateOfJoining,
         );
         await staffLeaveAccrualService.repairAccrualLeaveTypeIds(
           staffId,

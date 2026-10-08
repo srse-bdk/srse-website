@@ -53,6 +53,19 @@ class StaffLeaveAccrualService {
       });
       joinedOn = (staffRaw as User | null)?.dateOfJoining ?? null;
     }
+    const joinYmd = joinedOn
+      ? String(joinedOn).trim().slice(0, 10)
+      : "";
+    // Drop any pre-join / duplicate rows so leave UI cannot re-inflate balances.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(joinYmd)) {
+      await this.reconcileAccrualsForJoiningDate(
+        staffId,
+        joinYmd,
+        year,
+        actionBy,
+      );
+    }
+
     const dueQuarters = getDueQuarters(year, new Date(), joinedOn);
     if (dueQuarters.length === 0) return 0;
 
@@ -125,7 +138,11 @@ class StaffLeaveAccrualService {
     let deleted = 0;
     const byKey = new Map<string, StaffLeaveAccrual[]>();
     for (const row of accruals) {
-      if (!dueKeys.has(row.quarterKey)) {
+      const isManualCredit =
+        String(row.quarterKey || "").includes("midjoin") ||
+        String(row.quarterKey || "").includes("manual");
+      // Drop standard quarters before join; keep manual mid-join grants.
+      if (!dueKeys.has(row.quarterKey) && !isManualCredit) {
         if (row.id) {
           await mutate({
             action: "delete",
