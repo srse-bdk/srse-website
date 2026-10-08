@@ -41,9 +41,19 @@ class StaffLeaveAccrualService {
     staffId: string,
     academicYear?: string,
     actionBy = "system",
+    /** When set, skips quarters before the staff joined. */
+    dateOfJoining?: string | null,
   ): Promise<number> {
     const year = academicYear || getAcademicYear();
-    const dueQuarters = getDueQuarters(year);
+    let joinedOn = dateOfJoining;
+    if (joinedOn == null) {
+      const staffRaw = await mutate({
+        action: "get",
+        path: `users/${staffId}`,
+      });
+      joinedOn = (staffRaw as User | null)?.dateOfJoining ?? null;
+    }
+    const dueQuarters = getDueQuarters(year, new Date(), joinedOn);
     if (dueQuarters.length === 0) return 0;
 
     const leaveTypes = await leaveTypeService.getActive();
@@ -93,6 +103,64 @@ class StaffLeaveAccrualService {
     }
 
     return created;
+  }
+
+  /**
+   * Remove accrual rows for quarters before the staff joined, and collapse
+   * duplicate quarter/code rows to a single credit.
+   */
+  async reconcileAccrualsForJoiningDate(
+    staffId: string,
+    dateOfJoining: string,
+    academicYear?: string,
+    actionBy = "admin",
+  ): Promise<{ deleted: number; kept: number }> {
+    const year = academicYear || getAcademicYear();
+    const joinYmd = String(dateOfJoining).trim().slice(0, 10);
+    const accruals = await this.getByStaffAndYear(staffId, year);
+    const dueKeys = new Set(
+      getDueQuarters(year, new Date(), joinYmd).map((q) => q.key),
+    );
+
+    let deleted = 0;
+    const byKey = new Map<string, StaffLeaveAccrual[]>();
+    for (const row of accruals) {
+      if (!dueKeys.has(row.quarterKey)) {
+        if (row.id) {
+          await mutate({
+            action: "delete",
+            path: `staffLeaveAccruals/${row.id}`,
+            actionBy,
+          });
+          deleted += 1;
+        }
+        continue;
+      }
+      const key = `${row.quarterKey}:${row.leaveTypeCode}`;
+      const list = byKey.get(key) || [];
+      list.push(row);
+      byKey.set(key, list);
+    }
+
+    let kept = 0;
+    for (const rows of byKey.values()) {
+      rows.sort((a, b) =>
+        String(a.createdAt || "").localeCompare(String(b.createdAt || "")),
+      );
+      const [keeper, ...dupes] = rows;
+      if (keeper) kept += 1;
+      for (const dup of dupes) {
+        if (!dup.id) continue;
+        await mutate({
+          action: "delete",
+          path: `staffLeaveAccruals/${dup.id}`,
+          actionBy,
+        });
+        deleted += 1;
+      }
+    }
+
+    return { deleted, kept };
   }
 
   /** Fix accrual rows that still point at an old leave type id after types were recreated. */
@@ -145,6 +213,7 @@ class StaffLeaveAccrualService {
         staff.uid,
         academicYear,
         actionBy,
+        staff.dateOfJoining,
       );
     }
 

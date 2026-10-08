@@ -56,11 +56,18 @@ export function getAcademicYearQuarters(academicYear: string): AcademicYearQuart
 export function getDueQuarters(
   academicYear: string,
   asOf: Date = new Date(),
+  /** yyyy-MM-dd or ISO — only credit quarters on/after this join date. */
+  joinedOn?: string | null,
 ): AcademicYearQuarter[] {
   const today = toLocalDateString(asOf);
-  return getAcademicYearQuarters(academicYear).filter(
-    (quarter) => quarter.accrualDate <= today,
-  );
+  const joinYmd = joinedOn ? String(joinedOn).trim().slice(0, 10) : "";
+  const hasJoin = /^\d{4}-\d{2}-\d{2}$/.test(joinYmd);
+  return getAcademicYearQuarters(academicYear).filter((quarter) => {
+    if (quarter.accrualDate > today) return false;
+    // Mid-year joiners: no credit for quarters that started before they joined.
+    if (hasJoin && quarter.accrualDate < joinYmd) return false;
+    return true;
+  });
 }
 
 export function isAccrualLeaveCode(code: string): code is AccrualLeaveCode {

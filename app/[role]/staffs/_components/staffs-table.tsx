@@ -15,6 +15,7 @@ import {
   Search,
   Trash2,
   Upload,
+  UserRoundPlus,
   XCircle,
 } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -52,6 +53,7 @@ import { isProfileOnlyStaff } from "@/lib/utils/staff-profile";
 import { BulkActionDialog } from "./bulk-action-dialog";
 import { DeleteStaffDialog } from "./delete-staff-dialog";
 import { ImportStaffsDialog } from "./import-staffs-dialog";
+import { ReplaceStaffDialog } from "./replace-staff-dialog";
 
 interface StaffsTableProps {
   staffs: User[];
@@ -70,6 +72,7 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
   const [bulkAction, setBulkAction] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
   const [bulkActionDialogOpen, setBulkActionDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
 
@@ -84,6 +87,11 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
   const openDeleteDialog = (staff: User) => {
     setSelectedStaff(staff);
     setDeleteDialogOpen(true);
+  };
+
+  const openReplaceDialog = (staff: User) => {
+    setSelectedStaff(staff);
+    setReplaceDialogOpen(true);
   };
 
   const handleDialogSuccess = () => {
@@ -530,6 +538,14 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
                                     Change Password
                                   </DropdownMenuItem>
                                 ) : null}
+                                {staff.status === "active" && (
+                                  <DropdownMenuItem
+                                    onClick={() => openReplaceDialog(staff)}
+                                  >
+                                    <UserRoundPlus className="mr-2 h-4 w-4" />
+                                    Replace staff
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   onClick={() => openDeleteDialog(staff)}
@@ -658,6 +674,14 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
                                 Change Password
                               </DropdownMenuItem>
                             ) : null}
+                            {staff.status === "active" && (
+                              <DropdownMenuItem
+                                onClick={() => openReplaceDialog(staff)}
+                              >
+                                <UserRoundPlus className="mr-2 h-4 w-4" />
+                                Replace staff
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onClick={() => openDeleteDialog(staff)}
@@ -682,6 +706,13 @@ export function StaffsTable({ staffs, onRefresh }: StaffsTableProps) {
       <DeleteStaffDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
+        staff={selectedStaff}
+        onSuccess={handleDialogSuccess}
+      />
+
+      <ReplaceStaffDialog
+        open={replaceDialogOpen}
+        onOpenChange={setReplaceDialogOpen}
         staff={selectedStaff}
         onSuccess={handleDialogSuccess}
       />

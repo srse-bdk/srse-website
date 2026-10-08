@@ -11,6 +11,8 @@ interface FeeStatsProps {
     totalPending: number;
     collectionRate: number;
     periodLabel?: string;
+    /** Pending / rate window (may include arrears through selected month). */
+    pendingLabel?: string;
 }
 
 export function FeeStats({
@@ -19,7 +21,9 @@ export function FeeStats({
     totalPending,
     collectionRate,
     periodLabel = "this year",
+    pendingLabel,
 }: FeeStatsProps) {
+    const duesLabel = pendingLabel || periodLabel;
     const stats = [
         {
             title: "Total Collections",
@@ -36,7 +40,7 @@ export function FeeStats({
             value: totalPending,
             isCurrency: true,
             icon: TrendingDown,
-            description: `Outstanding on bills due ${periodLabel}`,
+            description: `Outstanding on bills due ${duesLabel}`,
             gradient: "from-rose-500 to-rose-600",
             bgGradient: "from-rose-500/10 to-rose-600/5",
             accentColor: "text-rose-500",
@@ -46,7 +50,7 @@ export function FeeStats({
             value: collectionRate,
             isPercentage: true,
             icon: TrendingUp,
-            description: `Paid share of bills due ${periodLabel}`,
+            description: `Paid share of bills due ${duesLabel}`,
             gradient: "from-blue-500 to-blue-600",
             bgGradient: "from-blue-500/10 to-blue-600/5",
             accentColor: "text-blue-500",

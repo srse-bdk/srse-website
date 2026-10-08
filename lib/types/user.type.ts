@@ -36,6 +36,8 @@ export interface User extends BaseEntity {
   position?: string;
   staffType?: "teaching" | "non-teaching";
   phoneNumber?: string;
+  /** ISO or yyyy-MM-dd — when the staff joined the school. */
+  dateOfJoining?: string;
   subjectAssignments?: StaffSubjectAssignment[];
   validChildrenIds?: string[]; // IDs of students this parent is authorized to view
   studentId?: string;
@@ -70,6 +72,7 @@ export interface UserInput {
   position: string;
   staffType: "teaching" | "non-teaching";
   phoneNumber?: string;
+  dateOfJoining?: string;
   subjectAssignments?: StaffSubjectAssignment[];
 }
 
@@ -85,6 +88,7 @@ export interface UserUpdateInput {
   position?: string;
   staffType?: "teaching" | "non-teaching";
   phoneNumber?: string;
+  dateOfJoining?: string;
   subjectAssignments?: StaffSubjectAssignment[];
   idCardPrintedAt?: string;
 }

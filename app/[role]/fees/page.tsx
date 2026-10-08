@@ -27,8 +27,10 @@ import { AcademicYearPicker } from "./_components/academic-year-picker";
 import { ClearFeeReceiptsButton } from "./_components/clear-fee-receipts-button";
 import { MonthPicker } from "./_components/month-picker";
 import {
+  getAcademicYearForDate,
   getAcademicYearRange,
   getMonthlyRange,
+  parseCalendarDate,
 } from "@/lib/utils/fee-dues";
 import { isStudentRte } from "@/lib/utils/student-rte";
 import { classTokensMatch } from "@/lib/utils/class-section-match";
@@ -168,46 +170,50 @@ export default function FeesPage() {
     return feePayments.filter((payment) => ids.has(payment.studentId));
   }, [feePayments, filteredStudents, classFilter]);
 
+  const periodAcademicYear =
+    viewMode === "yearly"
+      ? selectedAcademicYear
+      : getAcademicYearForDate(selectedMonth);
+
   // Stats / table totals: apply admission XOR readmission + May tuition rules.
   const applicableFees = React.useMemo(() => {
-    const ay =
-      viewMode === "yearly"
-        ? selectedAcademicYear
-        : undefined;
     return filterApplicableFeesForStudents(
       filteredFees,
       filteredStudents,
       feeConfigs,
-      ay,
+      periodAcademicYear,
     );
-  }, [
-    filteredFees,
-    filteredStudents,
-    feeConfigs,
-    viewMode,
-    selectedAcademicYear,
-  ]);
+  }, [filteredFees, filteredStudents, feeConfigs, periodAcademicYear]);
 
   const { totalCollections, totalPending, collectionRate, studentsWithDues } =
     React.useMemo(() => {
       const monthRange = getMonthlyRange(selectedMonth);
-      const ayRange = getAcademicYearRange(selectedAcademicYear);
-      const range = viewMode === "monthly" ? monthRange : ayRange;
+      const ayRange = getAcademicYearRange(periodAcademicYear);
+      // Collections window: selected month, or full academic year.
+      const collectionRange =
+        viewMode === "monthly" ? monthRange : ayRange;
+      // Pending window: AY start through end of selected period (cumulative
+      // arrears + current). Monthly view must not drop Apr–Sep when viewing Oct.
+      const pendingThrough = {
+        start: ayRange.start,
+        end: viewMode === "monthly" ? monthRange.end : ayRange.end,
+      };
       const studentIds = new Set(filteredStudents.map((s) => s.id));
       const rteStudentIds = new Set(
         filteredStudents.filter(isStudentRte).map((s) => s.id),
       );
 
-      const feesInRange = applicableFees.filter((fee) => {
+      const feesDueThroughPeriod = applicableFees.filter((fee) => {
         if (!studentIds.has(fee.studentId)) return false;
         // School pending excludes RTE — those bills are tracked under RTE / govt claim.
         if (rteStudentIds.has(fee.studentId)) return false;
         if (!fee.dueDate) return false;
-        const dueDate = new Date(fee.dueDate);
-        return isWithinInterval(dueDate, {
-          start: range.start,
-          end: range.end,
-        });
+        const dueDate = parseCalendarDate(fee.dueDate);
+        if (!dueDate) return false;
+        return (
+          dueDate.getTime() >= pendingThrough.start.getTime() &&
+          dueDate.getTime() <= pendingThrough.end.getTime()
+        );
       });
 
       // Collections = approved payments received in this period (by payment date),
@@ -230,17 +236,20 @@ export default function FeesPage() {
           payment.approvedAt ||
           payment.updatedAt;
         if (!paidOn) return sum;
-        const paidDate = new Date(paidOn);
+        const paidDate = parseCalendarDate(paidOn) || new Date(paidOn);
         if (Number.isNaN(paidDate.getTime())) return sum;
         if (
-          !isWithinInterval(paidDate, { start: range.start, end: range.end })
+          !isWithinInterval(paidDate, {
+            start: collectionRange.start,
+            end: collectionRange.end,
+          })
         ) {
           return sum;
         }
         return sum + amount;
       }, 0);
 
-      const totalPendingInRange = feesInRange.reduce(
+      const totalPendingThrough = feesDueThroughPeriod.reduce(
         (sum, fee) =>
           sum +
           Math.max(
@@ -250,19 +259,19 @@ export default function FeesPage() {
         0,
       );
 
-      const billedInRange = feesInRange.reduce(
+      const billedThrough = feesDueThroughPeriod.reduce(
         (sum, fee) => sum + (Number(fee.amount) || 0),
         0,
       );
-      const paidAgainstBillsInRange = feesInRange.reduce(
+      const paidAgainstBillsThrough = feesDueThroughPeriod.reduce(
         (sum, fee) =>
           sum +
           Math.min(Number(fee.amount) || 0, Number(fee.paidAmount) || 0),
         0,
       );
 
-      const studentsWithPendingInRange = new Set(
-        feesInRange
+      const studentsWithPending = new Set(
+        feesDueThroughPeriod
           .filter(
             (fee) =>
               (Number(fee.amount) || 0) - (Number(fee.paidAmount) || 0) > 0,
@@ -271,15 +280,15 @@ export default function FeesPage() {
       ).size;
 
       const rate =
-        billedInRange > 0
-          ? (paidAgainstBillsInRange / billedInRange) * 100
+        billedThrough > 0
+          ? (paidAgainstBillsThrough / billedThrough) * 100
           : 0;
 
       return {
         totalCollections: collectionsInRange,
-        totalPending: totalPendingInRange,
+        totalPending: totalPendingThrough,
         collectionRate: rate,
-        studentsWithDues: studentsWithPendingInRange,
+        studentsWithDues: studentsWithPending,
       };
     }, [
       applicableFees,
@@ -287,7 +296,7 @@ export default function FeesPage() {
       filteredStudents,
       selectedMonth,
       viewMode,
-      selectedAcademicYear,
+      periodAcademicYear,
     ]);
 
   if (studentsLoading || feesLoading || feeConfigsLoading || feePaymentsLoading) {
@@ -364,6 +373,11 @@ export default function FeesPage() {
         totalPending={totalPending}
         collectionRate={collectionRate}
         periodLabel={viewMode === "monthly" ? "this month" : "this year"}
+        pendingLabel={
+          viewMode === "monthly"
+            ? "through this month (incl. arrears)"
+            : "this academic year"
+        }
       />
 
       <FeeCharts fees={applicableFees} />

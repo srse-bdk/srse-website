@@ -91,10 +91,12 @@ export function ManageStudentExtraFeesDialog({
           : false;
         if (!admOn) included = true;
       }
-      // New admission: uniform mandatory (2 sets). Continuing: optional (off unless set).
+      // New admission: uniform on (class fee). Continuing / re-admission: off.
       if (config && kind === "uniform") {
         if (isNewThisAy) {
           included = !(student.excludedFeeConfigIds || []).includes(config.id);
+        } else {
+          included = false;
         }
       }
       let amount = config ? resolveSelectableFeeAmount(student, config) : 0;
@@ -104,8 +106,12 @@ export function ManageStudentExtraFeesDialog({
           student.currentClass || "unassigned",
         );
         const raw = student.optionalFeeAmounts?.[config.id];
-        if (raw == null || Number(raw) === 0) {
-          amount = isNewThisAy ? unit * 2 : unit;
+        if (
+          raw == null ||
+          Number(raw) === 0 ||
+          (unit > 0 && Number(raw) === unit * 2)
+        ) {
+          amount = unit;
         }
       }
       return { kind, config, included, amount };
@@ -192,8 +198,8 @@ export function ManageStudentExtraFeesDialog({
             tuition; monthly tuition starts from May. Admission covers the
             admission-month tuition when admitted on/before the 20th; after the
             20th, that month is not charged and the next month is included.
-            Uniform: new admissions get 2 sets (mandatory); re-admission /
-            continuing get 1 set (optional). Books &amp; copies are mandatory
+            Uniform is included for new admissions (class fee) and excluded for
+            re-admission / continuing students. Books &amp; copies are mandatory
             each year.
           </DialogDescription>
         </DialogHeader>
@@ -263,15 +269,15 @@ export function ManageStudentExtraFeesDialog({
                     )}
                     {row.kind === "uniform" && (
                       <p className="text-[11px] text-muted-foreground mt-1">
-                        New admission: 2 sets mandatory. Re-admission /
-                        continuing: 1 set optional. Amount is the total billed.
+                        Included for new admissions using the class fee. Not
+                        billed for re-admission / continuing students.
                       </p>
                     )}
                   </div>
                   {row.config && row.included && (
                     <div className="w-28 shrink-0">
                       <Label className="text-[10px] text-muted-foreground mb-1 block">
-                        {row.kind === "uniform" ? "Total (₹)" : "Amount (₹)"}
+                        Amount (₹)
                       </Label>
                       <Input
                         type="number"

@@ -233,10 +233,10 @@ export default function FeeStructurePage() {
           </CardTitle>
           <CardDescription>
             Catch up syncs admission vs re-admission (either/or), issues Books
-            &amp; Copies for everyone, Uniform (2 sets mandatory for new
-            admissions; 1 set optional for re-admission), and bills tuition from
-            May for re-admission students. AY fee due dates follow admission month
-            for new students. Creates any missing bills through this month.
+            &amp; Copies for everyone, Uniform for new admissions only (class
+            fee; excluded for re-admission), and bills tuition from May for
+            re-admission students. AY fee due dates follow admission month for
+            new students. Creates any missing bills through this month.
           </CardDescription>
         </CardHeader>
         <CardContent>

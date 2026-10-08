@@ -194,14 +194,10 @@ function buildFeeIssueRecord(params: {
   const recordId = `${slug(config.id)}_${slug(student.id)}_${slug(periodKey)}`;
   const dueDate = format(endOfMonth(displayDate), "yyyy-MM-dd");
 
-  // Uniform: new admission = 2 sets mandatory; continuing = 1 set when included.
+  // Uniform: class fee amount as-is (no set multiplier).
   let amount = overrideAmount != null
     ? overrideAmount
     : resolveClassFeeAmount(config.classFees, classId);
-  if (isUniform && overrideAmount == null) {
-    const unit = resolveClassFeeAmount(config.classFees, classId);
-    amount = isNewThisAy ? unit * 2 : unit;
-  }
   if (amount <= 0) return null;
 
   let title: string;
@@ -216,10 +212,6 @@ function buildFeeIssueRecord(params: {
       } else {
         title = `${ayLabel} ${config.name}`;
       }
-    } else if (isUniform) {
-      title = isNewThisAy
-        ? `${ayLabel} ${config.name} (2 sets)`
-        : `${ayLabel} ${config.name} (1 set)`;
     } else {
       title = `${ayLabel} ${config.name}`;
     }
@@ -246,8 +238,8 @@ function buildFeeIssueRecord(params: {
     }
   } else if (isUniform) {
     remarks = isNewThisAy
-      ? "Mandatory 2 sets for new admission."
-      : "Optional 1 set for re-admission / continuing students.";
+      ? "Included for new admission (class fee)."
+      : "Not billed for re-admission / continuing students.";
   } else if (isAyFee) {
     remarks = isNewThisAy
       ? `Academic year ${ayLabel} fee (due in admission month).`
@@ -300,12 +292,12 @@ function studentEligibleForPeriod(
       return true;
     }
     if (configMatchesSelectableKind(config, "uniform")) {
-      // New admission: mandatory. Continuing: optional (only if included).
+      // New admission only — class fee. Never for re-admission / continuing.
+      if (isContinuing) return false;
       if ((student.excludedFeeConfigIds || []).includes(config.id)) {
         return false;
       }
-      if (isNewThisAy) return true;
-      return isSelectableFeeIncluded(student as Student, config);
+      return true;
     }
     if (configMatchesSelectableKind(config, "readmission")) {
       // Continuing only — either/or with admission.
@@ -359,9 +351,9 @@ function studentEligibleForPeriod(
 }
 
 /**
- * Sync admission vs re-admission (either/or), books, and uniform sets.
- * - New this AY: admission only; uniform 2 sets mandatory; books mandatory
- * - Everyone else: re-admission only; uniform 1 set optional; books mandatory
+ * Sync admission vs re-admission (either/or), books, and uniform.
+ * - New this AY: admission only; uniform included (class fee); books mandatory
+ * - Everyone else: re-admission only; uniform excluded; books mandatory
  */
 function assignAdmissionReadmissionAndBooks(params: {
   student: Student;
@@ -483,7 +475,7 @@ function assignAdmissionReadmissionAndBooks(params: {
     ensureAssigned(books);
   }
 
-  // Uniform: new = 2 sets mandatory; continuing = 1 set optional (no auto-add).
+  // Uniform: new admission = class fee; continuing / re-admission = excluded.
   if (uniformCfg) {
     const unit = resolveClassFeeAmount(
       uniformCfg.classFees,
@@ -492,34 +484,20 @@ function assignAdmissionReadmissionAndBooks(params: {
     if (isNewThisAy) {
       excluded.delete(uniformCfg.id);
       optionalIds.add(uniformCfg.id);
-      const twoSets = unit > 0 ? unit * 2 : 0;
       const prev = optionalAmounts[uniformCfg.id];
-      // Set 2-set amount unless a custom amount already differs from 0/1-set/2-set defaults.
+      // Refresh when unset/zero, or when leftover 2× amount from old set logic.
       if (
         prev == null ||
         Number(prev) === 0 ||
-        Number(prev) === unit ||
-        Number(prev) === twoSets
+        (unit > 0 && Number(prev) === unit * 2)
       ) {
-        if (twoSets > 0) optionalAmounts[uniformCfg.id] = twoSets;
+        if (unit > 0) optionalAmounts[uniformCfg.id] = unit;
         else delete optionalAmounts[uniformCfg.id];
       }
     } else {
-      // Continuing / re-admission: optional. Keep only explicit positive amounts
-      // (manual opt-in). Clear bare optionalFeeIds from older force-include syncs.
-      const prev = optionalAmounts[uniformCfg.id];
-      if (
-        !excluded.has(uniformCfg.id) &&
-        prev != null &&
-        Number(prev) > 0
-      ) {
-        optionalIds.add(uniformCfg.id);
-        // If amount equals 2-set default from a prior new-admission year, leave it;
-        // otherwise leave custom 1-set / custom totals as-is.
-      } else {
-        optionalIds.delete(uniformCfg.id);
-        delete optionalAmounts[uniformCfg.id];
-      }
+      excluded.add(uniformCfg.id);
+      optionalIds.delete(uniformCfg.id);
+      delete optionalAmounts[uniformCfg.id];
     }
   }
 
@@ -1360,6 +1338,18 @@ export const feeService = {
           configs,
           throughDate,
         );
+        // Uniform is only for new admissions — drop unpaid uniform for continuing.
+        const uniformCfg = findSelectableFeeConfig(
+          configs,
+          "uniform",
+          throughDate,
+        );
+        if (uniformCfg) {
+          await this.deleteUnpaidFeeRecordsForConfig(
+            student.id,
+            uniformCfg.id,
+          );
+        }
       } else {
         await this.deleteUnpaidAdmissionCoveredTuitionForStudent(
           { ...student, excludedFeeConfigIds: assigned.excludedFeeConfigIds },

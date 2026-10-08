@@ -39,6 +39,7 @@ import { formatCurrency } from "@/lib/utils";
 import {
     getAcademicYearForDate,
     getAcademicYearRange,
+    parseCalendarDate,
 } from "@/lib/utils/fee-dues";
 import { filterApplicableFeesForStudent } from "@/lib/utils/fee-bill-rules";
 import { isStudentRte } from "@/lib/utils/student-rte";
@@ -116,8 +117,12 @@ export function FeesTable({
         selectedCategory === "all" || f.category === selectedCategory;
       if (f.studentId !== student.id || !matchesCategory) return false;
       if (!f.dueDate) return false;
-      const dueDate = new Date(f.dueDate);
-      return dueDate >= ayRange.start && dueDate <= ayRange.end;
+      const dueDate = parseCalendarDate(f.dueDate);
+      if (!dueDate) return false;
+      return (
+        dueDate.getTime() >= ayRange.start.getTime() &&
+        dueDate.getTime() <= ayRange.end.getTime()
+      );
     });
 
     const filteredDue = studentFees.reduce(

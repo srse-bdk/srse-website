@@ -84,10 +84,20 @@ export default function StaffTimeTablePage() {
                                     section: "" 
                                 });
                             }
-                        } else if (slot.staffId === id) {
+                        } else if (
+                            slot.staffId === id ||
+                            // Fallback when staffId was dropped but name still matches
+                            (!slot.staffId &&
+                                staff?.name &&
+                                String(slot.staffName || "")
+                                    .trim()
+                                    .toLowerCase() ===
+                                    String(staff.name).trim().toLowerCase())
+                        ) {
                             foundSlots = true;
                             combinedSchedule[day][idx].push({
                                 ...slot,
+                                staffId: slot.staffId || id,
                                 className: tt.className,
                                 section: tt.section
                             });
@@ -108,7 +118,7 @@ export default function StaffTimeTablePage() {
             config: baseConfig,
             numberOfPeriods: maxPeriods
         };
-    }, [allTimeTables, id]);
+    }, [allTimeTables, id, staff?.name]);
 
     const handlePrint = useReactToPrint({
         contentRef: printRef,

@@ -10,6 +10,7 @@ import { normalizeLoginEmail } from "@/lib/utils/auth-email";
 import { getAuthErrorMessage, isAuthRateLimited } from "@/lib/utils/auth-errors";
 import { ensureUniqueScanId, generateUniqueScanId } from "@/lib/utils/scan-id";
 import { isProfileOnlyStaff } from "@/lib/utils/staff-profile";
+import { staffLeaveAccrualService } from "./staff-leave-accrual.service";
 
 function generateProfileStaffId(): string {
   return `staff_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -82,6 +83,7 @@ class StaffService {
         position: data.position,
         staffType: data.staffType,
         phoneNumber: data.phoneNumber,
+        dateOfJoining: data.dateOfJoining || null,
         hasLogin: true,
         subjectAssignments: data.subjectAssignments || [],
       },
@@ -366,6 +368,175 @@ class StaffService {
     }
 
     return updatedCount;
+  }
+
+  /**
+   * Replace a leaving staff member with a new profile.
+   * Copies class/subject assignments and rewrites timetable slots (+ legacy
+   * subject.staffId). Does NOT copy leave applications or leave accruals.
+   * Deactivates the outgoing staff and clears their assignments.
+   */
+  async replaceStaff(params: {
+    outgoingStaffId: string;
+    name: string;
+    email: string;
+    password: string;
+    phoneNumber?: string;
+    gender?: "male" | "female" | "other";
+    bloodGroup?: User["bloodGroup"];
+    /** yyyy-MM-dd or ISO */
+    dateOfJoining?: string;
+  }): Promise<{
+    newStaffId: string;
+    copiedAssignments: number;
+    timetableSlotsUpdated: number;
+    subjectsUpdated: number;
+  }> {
+    const outgoing = await this.getById(params.outgoingStaffId);
+    if (!outgoing) throw new Error("Outgoing staff not found");
+    if (outgoing.status === "inactive") {
+      throw new Error("Outgoing staff is already inactive");
+    }
+
+    const email = normalizeLoginEmail(params.email);
+    const existing = await this.getByEmail(email);
+    if (existing) {
+      throw new Error(`Email ${email} is already used by ${existing.name}`);
+    }
+
+    const joining =
+      params.dateOfJoining && /^\d{4}-\d{2}-\d{2}/.test(params.dateOfJoining)
+        ? `${params.dateOfJoining.slice(0, 10)}T12:00:00.000Z`
+        : params.dateOfJoining;
+
+    const assignments = [...(outgoing.subjectAssignments || [])];
+    const { userId, authResponse } = await this.create({
+      name: params.name.trim(),
+      email,
+      password: params.password,
+      role: "staff",
+      gender: params.gender || outgoing.gender || "female",
+      bloodGroup: params.bloodGroup ?? outgoing.bloodGroup,
+      position: outgoing.position || "Teacher",
+      staffType: outgoing.staffType || "teaching",
+      phoneNumber: params.phoneNumber?.trim() || undefined,
+      dateOfJoining: joining,
+      subjectAssignments: assignments,
+    });
+    // Prefer Auth UID — mutate("create") with an explicit path may not return the id.
+    const newStaffId =
+      authResponse.localId || userId || "";
+    if (!newStaffId) {
+      throw new Error("Failed to resolve new staff id after create");
+    }
+
+    // Timetable slots: swap staffId / staffName where they pointed at outgoing.
+    const timeTablesRaw = await mutate({
+      action: "get",
+      path: "time-tables",
+      actionBy: "admin",
+    });
+    const timeTables = getArrFromObj(timeTablesRaw || {}) as Array<{
+      id: string;
+      schedule?: Record<string, Array<Record<string, unknown>>>;
+    }>;
+    const outgoingName = (outgoing.name || "").trim().toLowerCase();
+    let timetableSlotsUpdated = 0;
+    for (const tt of timeTables) {
+      if (!tt.schedule) continue;
+      let changed = false;
+      const nextSchedule: Record<string, Array<Record<string, unknown>>> = {};
+      for (const [day, slots] of Object.entries(tt.schedule)) {
+        nextSchedule[day] = (slots || []).map((slot) => {
+          const slotStaffId = slot?.staffId != null ? String(slot.staffId) : "";
+          const slotName = String(slot?.staffName || "")
+            .trim()
+            .toLowerCase();
+          const matchesOutgoing =
+            slotStaffId === params.outgoingStaffId ||
+            (!slotStaffId && outgoingName && slotName === outgoingName);
+          if (!matchesOutgoing) return slot;
+          changed = true;
+          timetableSlotsUpdated += 1;
+          return {
+            ...slot,
+            staffId: newStaffId,
+            staffName: params.name.trim(),
+          };
+        });
+      }
+      if (changed) {
+        await mutate({
+          action: "update",
+          path: `time-tables/${tt.id}`,
+          data: {
+            schedule: nextSchedule,
+            updatedAt: new Date().toISOString(),
+          },
+          actionBy: "admin",
+        });
+      }
+    }
+
+    // Legacy subject.staffId pointers.
+    const subjectsRaw = await mutate({
+      action: "get",
+      path: "subjects",
+      actionBy: "admin",
+    });
+    const subjects = getArrFromObj(subjectsRaw || {}) as Array<{
+      id: string;
+      staffId?: string;
+    }>;
+    let subjectsUpdated = 0;
+    for (const subject of subjects) {
+      if (subject.staffId !== params.outgoingStaffId) continue;
+      await mutate({
+        action: "update",
+        path: `subjects/${subject.id}`,
+        data: {
+          staffId: newStaffId,
+          updatedAt: new Date().toISOString(),
+        },
+        actionBy: "admin",
+      });
+      subjectsUpdated += 1;
+    }
+
+    // Deactivate outgoing — keep leave history on their profile; clear assignments.
+    await this.update(params.outgoingStaffId, {
+      status: "inactive",
+      subjectAssignments: [],
+    });
+
+    // Fresh leave credits for the replacement from their joining date (not copied).
+    if (joining) {
+      await staffLeaveAccrualService.reconcileAccrualsForJoiningDate(
+        newStaffId,
+        joining,
+        undefined,
+        "admin",
+      );
+      await staffLeaveAccrualService.ensureQuarterlyAccrualsForStaff(
+        newStaffId,
+        undefined,
+        "admin",
+        joining,
+      );
+    } else {
+      await staffLeaveAccrualService.ensureQuarterlyAccrualsForStaff(
+        newStaffId,
+        undefined,
+        "admin",
+      );
+    }
+
+    return {
+      newStaffId,
+      copiedAssignments: assignments.length,
+      timetableSlotsUpdated,
+      subjectsUpdated,
+    };
   }
 }
 
