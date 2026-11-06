@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Bell,
   CalendarClock,
+  Coffee,
   GraduationCap,
   Sparkles,
   User,
@@ -112,6 +113,12 @@ export function StudentDashboard() {
       description: "Arrival and dismissal history",
       icon: Bell,
       href: `/${role}/gate-activity`,
+    },
+    {
+      title: "Breakfast",
+      description: "Order tomorrow’s canteen breakfast",
+      icon: Coffee,
+      href: `/${role}/breakfast`,
     },
     ...(user?.studentId
       ? [

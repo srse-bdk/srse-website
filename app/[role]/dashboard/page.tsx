@@ -459,6 +459,11 @@ export default function DashboardPage() {
     return <AccountsDashboard />;
   }
 
+  if (user?.role === "canteen") {
+    router.replace("/canteen/canteen");
+    return null;
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">

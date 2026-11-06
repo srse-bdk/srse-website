@@ -10,7 +10,8 @@ export type UserRole =
   | "parent"
   | "student"
   | "scanner"
-  | "accounts";
+  | "accounts"
+  | "canteen";
 
 export interface StaffSubjectAssignment {
   subjectId: string;

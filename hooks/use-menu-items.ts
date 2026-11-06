@@ -12,6 +12,7 @@ import {
   CalendarDays,
   ClipboardList,
   Clock,
+  Coffee,
   CreditCard,
   FileCheck,
   FileText,
@@ -156,6 +157,12 @@ const ADMIN_NAVIGATION: NavigationItem[] = [
     ],
   },
   {
+    title: "Canteen",
+    url: "/canteen",
+    icon: Coffee,
+    roles: ["admin"],
+  },
+  {
     title: "ID Card Data",
     icon: CreditCard,
     roles: ["admin"],
@@ -298,6 +305,12 @@ function buildStudentNavigation(studentId?: string): NavigationItem[] {
       icon: Bell,
       roles: ["student"],
     },
+    {
+      title: "Breakfast",
+      url: "/breakfast",
+      icon: Coffee,
+      roles: ["student"],
+    },
   ];
 
   if (studentId) {
@@ -310,6 +323,23 @@ function buildStudentNavigation(studentId?: string): NavigationItem[] {
   }
 
   return items;
+}
+
+function buildCanteenNavigation(): NavigationItem[] {
+  return [
+    {
+      title: "Breakfast orders",
+      url: "/canteen",
+      icon: Coffee,
+      roles: ["canteen"],
+    },
+    {
+      title: "Settings",
+      url: "/settings",
+      icon: Settings,
+      roles: ["canteen"],
+    },
+  ];
 }
 
 function buildAccountsNavigation(): NavigationItem[] {
@@ -374,6 +404,8 @@ export function useMenuItems() {
         return buildStudentNavigation(user.studentId);
       case "accounts":
         return buildAccountsNavigation();
+      case "canteen":
+        return buildCanteenNavigation();
       case "parent":
         return [];
       default:

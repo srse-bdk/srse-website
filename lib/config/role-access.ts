@@ -13,6 +13,9 @@ export function getDefaultRouteForRole(role: UserRole): string {
   if (role === "accounts") {
     return "/accounts/cash-book";
   }
+  if (role === "canteen") {
+    return "/canteen/canteen";
+  }
   return `/${role}/dashboard`;
 }
 
@@ -62,6 +65,7 @@ const STUDENT_ROUTE_PATTERNS = [
   "/time-table/:id",
   "/students/:studentId",
   "/gate-activity",
+  "/breakfast",
 ];
 
 const STAFF_ROUTE_PATTERNS = [
@@ -86,6 +90,8 @@ const ACCOUNTS_ROUTE_PATTERNS = [
   "/fees/rte",
   "/students/:studentId",
 ];
+
+const CANTEEN_ROUTE_PATTERNS = ["/settings", "/canteen"];
 
 function matchesAnyPattern(patterns: string[], path: string): boolean {
   return patterns.some((pattern) => matchesRoute(pattern, path));
@@ -145,6 +151,10 @@ export function canRoleAccessPath(
 
   if (role === "accounts") {
     return matchesAnyPattern(ACCOUNTS_ROUTE_PATTERNS, path);
+  }
+
+  if (role === "canteen") {
+    return matchesAnyPattern(CANTEEN_ROUTE_PATTERNS, path);
   }
 
   return false;

@@ -18,6 +18,8 @@ export * from "./staff-leave-accrual.service";
 export * from "./student-gate-notification.service";
 export * from "./scanner-user.service";
 export * from "./accounts-user.service";
+export * from "./canteen-user.service";
+export * from "./breakfast-order.service";
 export * from "./cash-book.service";
 export * from "./scanner-login-notification.service";
 export * from "./gate-activity-reset.service";

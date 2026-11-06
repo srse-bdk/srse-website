@@ -19,6 +19,7 @@ export const VALID_PORTAL_ROLES: UserRole[] = [
   "parent",
   "scanner",
   "accounts",
+  "canteen",
 ];
 
 export const PROTECTED_ROLE_SEGMENTS: UserRole[] = [...VALID_PORTAL_ROLES];
